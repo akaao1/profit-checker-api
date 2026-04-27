@@ -31,7 +31,8 @@ export default async function handler(req, res) {
 
     const response = await fetch(url, {
       headers: {
-        Referer: "https://profit-checker-api.vercel.app/"
+        referer: "https://profit-checker-api.vercel.app/",
+        origin: "https://profit-checker-api.vercel.app"
       }
     });
 
