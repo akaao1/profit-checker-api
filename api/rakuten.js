@@ -19,8 +19,7 @@ export default async function handler(req, res) {
       applicationId: appId,
       accessKey: accessKey,
       keyword: keyword,
-      sort: "+itemPrice",
-      hits: "10",
+      hits: "5",
       format: "json",
       formatVersion: "2"
     });
@@ -38,31 +37,10 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
-    if (!response.ok || data.error || data.errors) {
-      return res.status(502).json({
-        error: "rakuten api error",
-        status: response.status,
-        rakutenError: data
-      });
-    }
-
-    const items = (data.items || [])
-      .filter(Boolean)
-      .sort((a, b) => Number(a.itemPrice) - Number(b.itemPrice));
-
-    if (items.length === 0) {
-      return res.status(200).json({ item: null });
-    }
-
-    const item = items[0];
-
     return res.status(200).json({
-      item: {
-        name: item.itemName,
-        price: item.itemPrice,
-        url: item.itemUrl,
-        shopName: item.shopName
-      }
+      status: response.status,
+      keys: Object.keys(data),
+      rawSample: data
     });
   } catch (error) {
     return res.status(500).json({
