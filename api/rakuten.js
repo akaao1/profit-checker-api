@@ -1,9 +1,5 @@
 export default async function handler(req, res) {
-  const keyword = req.query.keyword;
-
-  if (!keyword) {
-    return res.status(400).json({ error: "keyword is required" });
-  }
+  const keyword = req.query.keyword || "マウス";
 
   const appId = process.env.RAKUTEN_APP_ID;
   const accessKey = process.env.RAKUTEN_ACCESS_KEY;
@@ -20,7 +16,6 @@ export default async function handler(req, res) {
       accessKey: accessKey,
       keyword: keyword,
       hits: "10",
-      sort: "+itemPrice",
       format: "json",
       formatVersion: "2"
     });
@@ -50,21 +45,47 @@ export default async function handler(req, res) {
 
     const items = rawItems
       .map((x) => x.Item || x)
-      .filter(Boolean)
-      .filter((x) => x.itemPrice)
-      .sort((a, b) => Number(a.itemPrice) - Number(b.itemPrice));
+      .filter(Boolean);
 
     if (items.length === 0) {
-      return res.status(200).json({ item: null });
+      return res.status(200).json({
+        item: null,
+        debug: {
+          keys: Object.keys(data),
+          count: data.count,
+          rawItemsLength: rawItems.length
+        }
+      });
     }
 
-    const item = items[0];
+    const normalized = items
+      .map((item) => ({
+        name: item.itemName || item.name || "",
+        price: Number(item.itemPrice || item.itemPriceMin || item.price || 0),
+        url: item.itemUrl || item.url || "",
+        shopName: item.shopName || "",
+        raw: item
+      }))
+      .filter((item) => item.price > 0)
+      .sort((a, b) => a.price - b.price);
+
+    if (normalized.length === 0) {
+      return res.status(200).json({
+        item: null,
+        debug: {
+          reason: "items exist but price field not found",
+          sample: items[0]
+        }
+      });
+    }
+
+    const item = normalized[0];
 
     return res.status(200).json({
       item: {
-        name: item.itemName,
-        price: item.itemPrice,
-        url: item.itemUrl,
+        name: item.name,
+        price: item.price,
+        url: item.url,
         shopName: item.shopName
       }
     });
