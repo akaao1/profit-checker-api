@@ -10,9 +10,7 @@ export default async function handler(req, res) {
   const keyword = req.query.keyword;
 
   if (!keyword) {
-    return res.status(400).json({
-      error: "keyword is required"
-    });
+    return res.status(400).json({ error: "keyword is required" });
   }
 
   const appId = process.env.RAKUTEN_APP_ID;
@@ -28,8 +26,8 @@ export default async function handler(req, res) {
     const params = new URLSearchParams({
       applicationId: appId,
       accessKey: accessKey,
-      keyword: keyword,
-      hits: "10",
+      keyword,
+      hits: "30",
       format: "json",
       formatVersion: "2"
     });
@@ -57,7 +55,7 @@ export default async function handler(req, res) {
 
     const rawItems = data.Items || data.items || [];
 
-    const normalizedItems = rawItems
+    const candidates = rawItems
       .map((x) => x.Item || x)
       .filter(Boolean)
       .map((item) => ({
@@ -66,24 +64,11 @@ export default async function handler(req, res) {
         url: item.itemUrl || item.url || "",
         shopName: item.shopName || ""
       }))
-      .filter((item) => item.price > 0)
-      .sort((a, b) => a.price - b.price);
-
-    if (normalizedItems.length === 0) {
-      return res.status(200).json({
-        item: null
-      });
-    }
-
-    const item = normalizedItems[0];
+      .filter((item) => item.name && item.price > 0)
+      .slice(0, 30);
 
     return res.status(200).json({
-      item: {
-        name: item.name,
-        price: item.price,
-        url: item.url,
-        shopName: item.shopName
-      }
+      candidates
     });
   } catch (error) {
     return res.status(500).json({
