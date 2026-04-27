@@ -29,10 +29,15 @@ export default async function handler(req, res) {
       "https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260401?" +
       params.toString();
 
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        Referer: "https://profit-checker-api.vercel.app/"
+      }
+    });
+
     const data = await response.json();
 
-    if (!response.ok || data.error) {
+    if (!response.ok || data.error || data.errors) {
       return res.status(502).json({
         error: "rakuten api error",
         status: response.status,
