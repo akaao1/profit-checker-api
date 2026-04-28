@@ -1,79 +1,58 @@
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  const keyword = req.query.keyword;
-
-  if (!keyword) {
-    return res.status(400).json({ error: "keyword is required" });
-  }
-
-  const appId = process.env.RAKUTEN_APP_ID;
-  const accessKey = process.env.RAKUTEN_ACCESS_KEY;
-
-  if (!appId || !accessKey) {
-    return res.status(500).json({
-      error: "RAKUTEN_APP_ID or RAKUTEN_ACCESS_KEY is missing"
-    });
-  }
-
   try {
-    const params = new URLSearchParams({
-      applicationId: appId,
-      accessKey: accessKey,
-      keyword,
-      hits: "30",
-      format: "json",
-      formatVersion: "2"
-    });
+    const keyword = req.query.keyword;
 
-    const url =
-      "https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260401?" +
-      params.toString();
-
-    const response = await fetch(url, {
-      headers: {
-        referer: "https://profit-checker-api.vercel.app/",
-        origin: "https://profit-checker-api.vercel.app"
-      }
-    });
-
-    const data = await response.json();
-
-    if (!response.ok || data.error || data.errors) {
-      return res.status(502).json({
-        error: "rakuten api error",
-        status: response.status,
-        rakutenError: data
-      });
+    if (!keyword) {
+      return res.status(400).json({ error: "keyword required" });
     }
 
-    const rawItems = data.Items || data.items || [];
+    const appId = process.env.RAKUTEN_APP_ID;
 
-    const candidates = rawItems
-      .map((x) => x.Item || x)
-      .filter(Boolean)
-      .map((item) => ({
-        name: item.itemName || item.name || "",
-        price: Number(item.itemPrice || item.itemPriceMin || item.price || 0),
-        url: item.itemUrl || item.url || "",
-        shopName: item.shopName || ""
-      }))
-      .filter((item) => item.name && item.price > 0)
-      .slice(0, 30);
+    const keywords = [
+      keyword,
+      keyword.split(" ")[1] || keyword, // 型番だけ
+      keyword.split(" ")[0] || keyword, // ブランドだけ
+      keyword.replace(/[A-Z]{2,}/g, "").trim(), // 型番抜き
+    ];
+
+    let allItems = [];
+
+    for (let i = 0; i < keywords.length; i++) {
+      const k = keywords[i];
+      if (!k) continue;
+
+      const url = `https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601?applicationId=${appId}&keyword=${encodeURIComponent(
+        k
+      )}&hits=10`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.Items) {
+        const items = data.Items.map((i) => i.Item);
+        allItems = allItems.concat(items);
+      }
+
+      // ←これが超重要（API制限回避）
+      await new Promise((r) => setTimeout(r, 700));
+    }
+
+    // 重複削除
+    const seen = new Set();
+    const unique = allItems.filter((item) => {
+      const key = item.itemName;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
     return res.status(200).json({
-      candidates
+      candidates: unique.slice(0, 20),
     });
-  } catch (error) {
+  } catch (e) {
     return res.status(500).json({
-      error: "rakuten api failed",
-      message: error.message
+      error: "rakuten api error",
+      message: e.message,
     });
   }
 }
