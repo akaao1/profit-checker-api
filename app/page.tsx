@@ -39,7 +39,8 @@ export default function Home(){
  const[data,setData]=useState<any>(null),[cardName,setCardName]=useState(""),[cardNumber,setCardNumber]=useState(""),[busy,setBusy]=useState(true),[cost,setCost]=useState(0),[tab,setTab]=useState<"radar"|"calc">("radar"),[selected,setSelected]=useState<string|null>(null);
  async function load(name="",number="",withHistory=false){setBusy(true);try{const params=new URLSearchParams();if(name.trim())params.set("card_name",name.trim());if(number.trim())params.set("card_number",number.trim());if(withHistory){params.set("history","1");params.set("days","90");params.set("limit","30")}const r=await fetch("/api/radar"+(params.size?"?"+params:""),{cache:"no-store"});setData(await r.json());setSelected(null)}catch{}finally{setBusy(false)}}
  useEffect(()=>{load()},[]);
- const prices:Price[]=data?.prices??[],sources=data?.sources??[],history:HistoryRow[]=data?.history??[];\n const hasSearch=!!(cardName.trim()||cardNumber.trim());
+ const prices:Price[]=data?.prices??[],sources=data?.sources??[],history:HistoryRow[]=data?.history??[];
+ const hasSearch=!!(cardName.trim()||cardNumber.trim());
  const live=sources.filter((s:any)=>s.enabled&&s.latest_product_count>0);
  const positive=prices.filter(p=>(p.cross_source_spread_jpy??0)>0).length;
  const searchCount=(data?.search??[]).length;
