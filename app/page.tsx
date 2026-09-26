@@ -1,7 +1,7 @@
 "use client";
 import {useEffect,useMemo,useState} from "react";
 
-type Price={product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;cardrush_buy_price_jpy:number|null;best_exit_price_jpy:number|null;best_exit_source_name:string|null;cross_source_spread_jpy:number|null;cross_source_spread_percent:string|null};
+type Price={product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;cardrush_buy_price_jpy:number|null;cardrush_latest_price_jpy:number|null;cardrush_latest_observed_at:string|null;hareruya_latest_price_jpy:number|null;hareruya_latest_observed_at:string|null;best_exit_price_jpy:number|null;best_exit_source_name:string|null;cross_source_spread_jpy:number|null;cross_source_spread_percent:string|null};
 type HistoryRow={product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;source_id:string;source_name:string;observed_day:string;price_jpy:number;observed_at:string};
 
 const yen=(n:number|null|undefined)=>n==null?"—":"¥"+Math.round(n).toLocaleString("ja-JP");
@@ -11,7 +11,7 @@ const daysAgo=(iso:string,d:number)=>new Date(iso).getTime()>=Date.now()-d*86400
 function HistoryChart({rows}:{rows:HistoryRow[]}){
  const bySource=useMemo(()=>{
   const m=new Map<string,HistoryRow[]>();
-  rows.forEach(r=>{if(!m.has(r.source_name))m.set(r.source_name,[]);m.get(r.source_name)!.push(r)});
+  rows.filter(r=>r.source_name.includes("CardRush")||r.source_name.includes("晴れる屋2")).forEach(r=>{if(!m.has(r.source_name))m.set(r.source_name,[]);m.get(r.source_name)!.push(r)});
   return [...m.entries()].map(([name,rs])=>[name,[...rs].sort((a,b)=>a.observed_day.localeCompare(b.observed_day))] as const);
  },[rows]);
  const dates=[...new Set(rows.map(r=>r.observed_day))].sort();
@@ -46,7 +46,7 @@ export default function Home(){
  const searchCount=(data?.search??[]).length;
  const summary=useMemo(()=>{const exits=prices.map(p=>p.best_exit_price_jpy??p.cardrush_buy_price_jpy).filter(Boolean) as number[];return exits.length?Math.round(exits.reduce((a,b)=>a+b,0)/exits.length):0},[prices]);
  const selectedPrice=prices.find(p=>p.product_id===selected)??null;
- const selectedHistory=selected?history.filter(h=>h.product_id===selected):[];
+ const selectedHistory=selected?history.filter(h=>h.product_id===selected&&(h.source_name.includes("CardRush")||h.source_name.includes("晴れる屋2"))):[];
  const stats=useMemo(()=>{
    if(!selectedHistory.length)return null;
    const latestBySource=new Map<string,HistoryRow>();
@@ -74,7 +74,7 @@ export default function Home(){
    {stats&&<div className="history-table"><div><span>店舗/ソース</span><strong>最新買取</strong><strong>観測時刻</strong></div>{stats.sources.sort((a,b)=>b.price_jpy-a.price_jpy).map(s=><div key={s.source_id}><span>{s.source_name}</span><strong>{yen(s.price_jpy)}</strong><span>{new Date(s.observed_at).toLocaleString("ja-JP",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div>)}</div>}
  </section>}
  <section className="head"><div><small>MARKET EXIT</small><h2>{hasSearch?"検索結果":"現在の買取レーダー"}</h2></div><button className="ghost" onClick={()=>load(cardName,cardNumber,hasSearch)}>↻ 更新</button></section>
- <section className="grid">{busy?<div className="empty">価格データを読み込んでいます…</div>:prices.length?prices.map((p,i)=>{const exit=p.best_exit_price_jpy??p.cardrush_buy_price_jpy;const profit=cost>0&&exit!=null?exit-cost:null;const roi=profit!=null?profit/cost*100:null;return <article key={p.product_id} className={selected===p.product_id?"selected":""} onClick={()=>setSelected(p.product_id)}><small>#{String(i+1).padStart(2,"0")}</small><h3>{p.canonical_name}</h3><label>{p.set_name??"その他"} · {p.card_number??"—"} · {p.rarity??"—"}</label><div className="price"><span>BEST EXIT</span><b>{yen(exit)}</b></div><p className="source">{p.best_exit_source_name??"—"} · {p.cross_source_spread_jpy!=null?("Spread "+yen(p.cross_source_spread_jpy)):"比較待ち"}</p><input className="buy" inputMode="numeric" placeholder="店頭仕入れ価格 ¥" value={cost||""} onClick={e=>e.stopPropagation()} onChange={e=>setCost(Number(e.target.value.replace(/\D/g,""))||0)}/>{roi!=null&&<div className={roi>0?"profit":"loss"}>{profit!>=0?"+":""}{yen(profit)} <span>ROI {roi.toFixed(1)}%</span></div>}<div className="trend-link">📈 相場推移を見る →</div></article>}) : <div className="empty">一致する価格データがありません。</div>}</section>
+ <section className="result-list">{busy?<div className="empty">価格データを読み込んでいます…</div>:prices.length?<div className="table-wrap"><div className="result-row result-head"><span>型番</span><span>カード名</span><span>CardRush 最新買取</span><span>晴れる屋2 最新買取</span></div>{prices.map(p=><div key={p.product_id} className="result-row"><span className="mono">{p.card_number??"—"}</span><strong>{p.canonical_name}</strong><button className="price-link" onClick={()=>setSelected(p.product_id)}>{yen(p.cardrush_latest_price_jpy??p.cardrush_buy_price_jpy)}<small>推移を見る →</small></button><button className="price-link" onClick={()=>setSelected(p.product_id)}>{yen(p.hareruya_latest_price_jpy)}<small>推移を見る →</small></button></div>)}</div>:<div className="empty">一致する価格データがありません。</div>}</section>
  </>:<section className="calculator"><small>FAST DECISION</small><h2>仕入れ判定</h2><p>店頭価格と出口価格を入力して、交通費などを含めた簡易ROIを計算できます。</p><label>仕入れ価格<input id="buy" inputMode="numeric" placeholder="12000"/></label><label>出口価格<input id="exit" inputMode="numeric" placeholder="18000"/></label><label>その他コスト<input id="other" inputMode="numeric" placeholder="500"/></label><button onClick={()=>{const b=Number((document.getElementById("buy") as HTMLInputElement).value||0),e=Number((document.getElementById("exit") as HTMLInputElement).value||0),o=Number((document.getElementById("other") as HTMLInputElement).value||0),p=e-b-o,r=b?p/b*100:0;const el=document.getElementById("result");if(el)el.textContent=b?((p>=0?"+":"")+yen(p)+" · ROI "+r.toFixed(1)+"%"):"仕入れ価格を入力してください"}}>計算する</button><div id="result" className="result">仕入れ価格を入力してください</div><small className="notice">※ 実際の買取額はカード状態、在庫、買取制限、店舗条件、交通費等で変動します。画面のROIは入力値による試算です。</small></section>}
  <section className="sources"><small>DATA SOURCE STATUS</small><h2>データソース</h2>{sources.map((s:any)=><div className="src" key={s.id}><i className={s.health_status==="LIVE"?"on":""}/><span>{s.name}<small>{s.health_status} · {Number(s.latest_product_count||0).toLocaleString()}件</small></span></div>)}</section>
  <footer>Cross-Border Seller Radar · Supabase × Vercel</footer>
