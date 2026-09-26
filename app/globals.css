@@ -36,3 +36,35 @@
   .search-detail .detail-title p{font-size:8px}
   .detail-buy-pair{margin-top:10px}
 }
+
+/* Final mobile search table: CardRush-style compact price list */
+@media(max-width:800px){
+  html{font-size:14px}
+  body{font-size:14px;overflow-x:hidden}
+  header{height:52px}
+  .search-hero{top:52px;padding:10px 12px 7px}
+  .search-hero h1{font-size:21px}
+  .search-hero p{font-size:8px;line-height:1.3;margin-bottom:6px}
+  .search-primary{grid-template-columns:minmax(0,1fr) 88px 48px;gap:4px}
+  .search-primary input{height:34px;padding:7px;font-size:11px}
+  .search-primary button{height:34px;padding:0 6px;font-size:10px}
+  .search-results{margin:0 10px}
+  .search-results .head{margin:9px 2px 5px}
+  .search-results .head h2{font-size:14px}
+  .mobile-results{display:block}
+  .mobile-price-table-wrap{border:1px solid #252e39;border-radius:7px;overflow:hidden;background:#0d1218}
+  .mobile-price-table{width:100%;border-collapse:collapse;table-layout:fixed}
+  .mobile-price-table th{height:28px;background:#080d12;color:#687383;font-size:8px;font-weight:800;text-align:left;padding:5px 7px;border-bottom:1px solid #252e39}
+  .mobile-price-table th:nth-child(1){width:49%}
+  .mobile-price-table th:nth-child(2),.mobile-price-table th:nth-child(3){width:25.5%;text-align:right}
+  .mobile-price-table td{padding:6px 7px;border-bottom:1px solid #202833;vertical-align:middle}
+  .mobile-price-table tbody tr:last-child td{border-bottom:0}
+  .mobile-price-table tbody tr:active{background:#151d26}
+  .mobile-price-table td:first-child strong{display:block;font-size:11px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mobile-price-table td:first-child small{display:block;color:#697585;font-size:7px;line-height:1.2;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mobile-price-table td:nth-child(2),.mobile-price-table td:nth-child(3){text-align:right}
+  .mobile-price-table td b{display:block;font-size:11px;line-height:1.15;white-space:nowrap}
+  .mobile-price-table td small{display:block;color:#687383;font-size:6.5px;line-height:1.2;margin-top:2px;white-space:nowrap}
+  .desktop-results{display:none}
+  .search-detail{margin:12px 10px 24px;padding:12px}
+}
