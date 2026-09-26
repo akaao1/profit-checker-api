@@ -4,3 +4,35 @@
 
 .detail-buy-pair div small{display:block;color:#78889a;font-size:8px;margin-top:4px}.detail-buy-pair div em{display:block;font-style:normal;font-size:9px;font-weight:800;margin-top:4px}.search-detail{scroll-margin-top:72px}
 @media(max-width:800px){.search-detail{padding-top:14px}.detail-buy-pair div small{font-size:7px}.detail-buy-pair div em{font-size:9px}}
+
+/* Dense mobile search results: list, not cards */
+.mobile-result-list{display:none}
+@media(max-width:800px){
+  .search-hero{padding:14px 14px 8px;position:sticky;top:70px;z-index:3;background:#080b10;border-bottom:1px solid #202630}
+  .search-hero h1{font-size:24px;margin:5px 0 3px}
+  .search-hero p{font-size:9px;line-height:1.35;margin:0 0 8px}
+  .search-primary{margin:0;padding:0;grid-template-columns:minmax(0,1fr) minmax(92px,.42fr) 58px;gap:5px}
+  .search-primary input{min-width:0;padding:9px 8px;font-size:12px;height:38px}
+  .search-primary button{height:38px;padding:0 8px;font-size:11px}
+  .search-results .head{margin:12px 14px 7px;padding:0}
+  .search-results .head h2{font-size:16px;margin:3px 0}
+  .mobile-results{display:none}
+  .desktop-results{display:none}
+  .mobile-result-list{display:block;margin:0 14px;border-top:1px solid #252e39}
+  .mobile-result-row{display:block;width:100%;padding:8px 0 7px;border:0;border-bottom:1px solid #202833;background:transparent;color:#eef2f7;text-align:left}
+  .mobile-result-row:active,.mobile-result-row:hover{background:#10171e}
+  .mobile-result-main{display:flex;align-items:baseline;gap:7px;min-width:0;line-height:1.15}
+  .mobile-result-main strong{font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .mobile-card-number{font-size:11px;color:#eef2f7;font-weight:700;white-space:nowrap;flex:none}
+  .mobile-result-meta{color:#667382;font-size:8px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mobile-buy-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:5px}
+  .mobile-buy-grid>div{display:grid;grid-template-columns:26px 1fr;grid-template-rows:auto auto;align-items:baseline;column-gap:5px}
+  .mobile-buy-grid i{grid-row:1/3;font-style:normal;font-size:8px;font-weight:900;color:#73e8a2}
+  .mobile-buy-grid>div:nth-child(2) i{color:#aab3bf}
+  .mobile-buy-grid b{font-size:12px;line-height:1}
+  .mobile-buy-grid small{font-size:7px;color:#596675;white-space:nowrap}
+  .search-detail{margin:14px 14px 25px}
+  .search-detail .detail-title h2{font-size:18px}
+  .search-detail .detail-title p{font-size:8px}
+  .detail-buy-pair{margin-top:10px}
+}
