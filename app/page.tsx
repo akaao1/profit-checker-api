@@ -1,25 +1,79 @@
 "use client";
 import {useEffect,useMemo,useState} from "react";
+
 type Price={product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;cardrush_buy_price_jpy:number|null;best_exit_price_jpy:number|null;best_exit_source_name:string|null;cross_source_spread_jpy:number|null;cross_source_spread_percent:string|null};
+type HistoryRow={product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;source_id:string;source_name:string;observed_day:string;price_jpy:number;observed_at:string};
+
 const yen=(n:number|null|undefined)=>n==null?"—":"¥"+Math.round(n).toLocaleString("ja-JP");
+const pct=(n:number|null|undefined)=>n==null?"—":(n>=0?"+":"")+n.toFixed(1)+"%";
+const daysAgo=(iso:string,d:number)=>new Date(iso).getTime()>=Date.now()-d*86400000;
+
+function HistoryChart({rows}:{rows:HistoryRow[]}){
+ const bySource=useMemo(()=>{
+  const m=new Map<string,HistoryRow[]>();
+  rows.forEach(r=>{if(!m.has(r.source_name))m.set(r.source_name,[]);m.get(r.source_name)!.push(r)});
+  return [...m.entries()].map(([name,rs])=>[name,[...rs].sort((a,b)=>a.observed_day.localeCompare(b.observed_day))] as const);
+ },[rows]);
+ const dates=[...new Set(rows.map(r=>r.observed_day))].sort();
+ if(!rows.length)return <div className="empty">このカードの履歴データはまだ十分にありません。</div>;
+ const values=rows.map(r=>r.price_jpy),min=Math.min(...values),max=Math.max(...values),range=Math.max(1,max-min);
+ const w=760,h=230,pad=28;
+ const x=(i:number)=>pad+(dates.length<=1?0:i*(w-pad*2)/(dates.length-1));
+ const y=(v:number)=>h-pad-(v-min)*(h-pad*2)/range;
+ return <div className="chart-wrap">
+   <div className="chart-legend">{bySource.map(([name])=><span key={name}>● {name}</span>)}</div>
+   <svg viewBox={`0 0 ${w} ${h}`} className="chart" role="img" aria-label="価格推移">
+    <line x1={pad} x2={w-pad} y1={h-pad} y2={h-pad} stroke="#29313c"/>
+    <line x1={pad} x2={pad} y1={pad} y2={h-pad} stroke="#29313c"/>
+    {[0,.5,1].map(t=><text key={t} x="2" y={pad+(h-pad*2)*t+4} className="axis">{yen(max-(max-min)*t)}</text>)}
+    {bySource.map(([name,rs],si)=>{
+      const pts=rs.map(r=>{const i=dates.indexOf(r.observed_day);return `${x(i)},${y(r.price_jpy)}`}).join(" ");
+      return <polyline key={name} points={pts} fill="none" stroke={si===0?"#73e8a2":"#8b9bad"} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round"/>;
+    })}
+    {dates.length>0&&<><text x={pad} y={h-6} className="axis">{dates[0]}</text><text x={w-pad} y={h-6} textAnchor="end" className="axis">{dates[dates.length-1]}</text></>}
+   </svg>
+ </div>;
+}
+
 export default function Home(){
- const[data,setData]=useState<any>(null),[q,setQ]=useState(""),[busy,setBusy]=useState(true),[cost,setCost]=useState(0),[tab,setTab]=useState<"radar"|"calc">("radar");
- async function load(s=""){setBusy(true);try{const r=await fetch("/api/radar"+(s?"?q="+encodeURIComponent(s):""),{cache:"no-store"});setData(await r.json())}catch{}finally{setBusy(false)}}
+ const[data,setData]=useState<any>(null),[q,setQ]=useState(""),[busy,setBusy]=useState(true),[cost,setCost]=useState(0),[tab,setTab]=useState<"radar"|"calc">("radar"),[selected,setSelected]=useState<string|null>(null);
+ async function load(s="",withHistory=false){setBusy(true);try{const params=new URLSearchParams();if(s)params.set("q",s);if(withHistory){params.set("history","1");params.set("days","90");params.set("limit","30")}const r=await fetch("/api/radar"+(params.size?"?"+params:""),{cache:"no-store"});setData(await r.json());setSelected(null)}catch{}finally{setBusy(false)}}
  useEffect(()=>{load()},[]);
- const prices:Price[]=data?.prices??[],sources=data?.sources??[];
+ const prices:Price[]=data?.prices??[],sources=data?.sources??[],history:HistoryRow[]=data?.history??[];
  const live=sources.filter((s:any)=>s.enabled&&s.latest_product_count>0);
  const positive=prices.filter(p=>(p.cross_source_spread_jpy??0)>0).length;
  const searchCount=(data?.search??[]).length;
  const summary=useMemo(()=>{const exits=prices.map(p=>p.best_exit_price_jpy??p.cardrush_buy_price_jpy).filter(Boolean) as number[];return exits.length?Math.round(exits.reduce((a,b)=>a+b,0)/exits.length):0},[prices]);
+ const selectedPrice=prices.find(p=>p.product_id===selected)??null;
+ const selectedHistory=selected?history.filter(h=>h.product_id===selected):[];
+ const stats=useMemo(()=>{
+   if(!selectedHistory.length)return null;
+   const latestBySource=new Map<string,HistoryRow>();
+   selectedHistory.forEach(r=>{const old=latestBySource.get(r.source_name);if(!old||r.observed_at>old.observed_at)latestBySource.set(r.source_name,r)});
+   const all=[...latestBySource.values()];
+   const latest=all.length?Math.max(...all.map(r=>r.price_jpy)):null;
+   const first=(d:number)=>{const rs=selectedHistory.filter(r=>daysAgo(r.observed_at,d));if(!rs.length)return null;const earliest=[...rs].sort((a,b)=>a.observed_at.localeCompare(b.observed_at))[0];return latest&&earliest.price_jpy?((latest-earliest.price_jpy)/earliest.price_jpy)*100:null};
+   const values=selectedHistory.map(r=>r.price_jpy);
+   return {latest,max:Math.max(...values),min:Math.min(...values),count:selectedHistory.length,c7:first(7),c30:first(30),sources:all};
+ },[selectedHistory]);
+
  return <main>
  <header><div className="brand"><span>⚡</span><div><b>Cross-Border Seller Radar</b><small>AKIHABARA · LIVE BUYBACK INTELLIGENCE</small></div></div><span className="live">● LIVE</span></header>
  <section className="hero"><div><small>RAW CARD → BEST EXIT</small><h1>店頭で見つけた瞬間に、<br/><em>売り先まで判断する。</em></h1><p>複数の買取データを横断し、カードを見つけたその場で出口価格と仕入れ採算を確認するためのレーダーです。</p><div className="hero-stats"><span><b>{live.length}</b> LIVE SOURCES</span><span><b>{prices.length.toLocaleString()}</b> COMPARISONS</span><span><b>{positive}</b> POSITIVE SPREADS</span></div></div><aside><small>平均 BEST EXIT</small><strong>{yen(summary)}</strong><label>現在表示中の価格</label></aside></section>
- <div style={{maxWidth:1106,margin:"0 auto",padding:"0 22px 18px"}}><a href="/scan" style={{color:"#73e8a2",fontSize:11,fontWeight:800}}>📹 店頭動画をスキャンする →</a></div><nav className="tabs"><button className={tab==="radar"?"active":""} onClick={()=>setTab("radar")}>価格レーダー</button><button className={tab==="calc"?"active":""} onClick={()=>setTab("calc")}>仕入れ判定</button></nav>
+ <div style={{maxWidth:1106,margin:"0 auto",padding:"0 22px 18px"}}><a href="/scan" style={{color:"#73e8a2",fontSize:11,fontWeight:800}}>📹 店頭動画をスキャンする →</a></div>
+ <nav className="tabs"><button className={tab==="radar"?"active":""} onClick={()=>setTab("radar")}>価格レーダー</button><button className={tab==="calc"?"active":""} onClick={()=>setTab("calc")}>仕入れ判定</button></nav>
  {tab==="radar"?<>
- <section className="search"><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load(q)} placeholder="カード名を検索（例：ピカチュウ）"/><button onClick={()=>load(q)}>検索</button></section>
- {q&&<div className="hint">{searchCount}件のカード候補 · Enterまたは検索でレーダーを絞り込み</div>}
- <section className="head"><div><small>MARKET EXIT</small><h2>現在の買取レーダー</h2></div><button className="ghost" onClick={()=>load()}>↻ 更新</button></section>
- <section className="grid">{busy?<div className="empty">価格データを読み込んでいます…</div>:prices.length?prices.map((p,i)=>{const exit=p.best_exit_price_jpy??p.cardrush_buy_price_jpy;const profit=cost>0&&exit!=null?exit-cost:null;const roi=profit!=null?profit/cost*100:null;return <article key={p.product_id}><small>#{String(i+1).padStart(2,"0")}</small><h3>{p.canonical_name}</h3><label>{p.set_name??"その他"} · {p.card_number??"—"} · {p.rarity??"—"}</label><div className="price"><span>BEST EXIT</span><b>{yen(exit)}</b></div><p className="source">{p.best_exit_source_name??"—"} · {p.cross_source_spread_jpy!=null?("Spread "+yen(p.cross_source_spread_jpy)):"比較待ち"}</p><input className="buy" inputMode="numeric" placeholder="店頭仕入れ価格 ¥" value={cost||""} onChange={e=>setCost(Number(e.target.value.replace(/\\D/g,""))||0)}/>{roi!=null&&<div className={roi>0?"profit":"loss"}>{profit!>=0?"+":""}{yen(profit)} <span>ROI {roi.toFixed(1)}%</span></div>}</article>}) : <div className="empty">一致する価格データがありません。</div>}</section>
+ <section className="search"><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load(q,true)} placeholder="カード名・カード番号・セット名を検索（例：ピカチュウ / 205/187）"/><button onClick={()=>load(q,true)}>検索</button></section>
+ {q&&<div className="hint">{searchCount}件のカード候補 · カードを選択すると90日相場を表示</div>}
+ {selectedPrice&&<section className="detail">
+   <button className="back" onClick={()=>setSelected(null)}>← 検索結果へ戻る</button>
+   <div className="detail-title"><div><small>PRICE HISTORY · 90 DAYS</small><h2>{selectedPrice.canonical_name}</h2><p>{selectedPrice.set_name??"その他"} · {selectedPrice.card_number??"—"} · {selectedPrice.rarity??"—"}</p></div><div className="detail-current"><span>BEST EXIT</span><b>{yen(selectedPrice.best_exit_price_jpy??selectedPrice.cardrush_buy_price_jpy)}</b><small>{selectedPrice.best_exit_source_name??"—"}</small></div></div>
+   {stats&&<div className="stat-grid"><div><span>7日変化</span><b className={(stats.c7??0)>=0?"profit":"loss"}>{pct(stats.c7)}</b></div><div><span>30日変化</span><b className={(stats.c30??0)>=0?"profit":"loss"}>{pct(stats.c30)}</b></div><div><span>90日最高</span><b>{yen(stats.max)}</b></div><div><span>90日最低</span><b>{yen(stats.min)}</b></div></div>}
+   <HistoryChart rows={selectedHistory}/>
+   {stats&&<div className="history-table"><div><span>店舗/ソース</span><strong>最新買取</strong><strong>観測時刻</strong></div>{stats.sources.sort((a,b)=>b.price_jpy-a.price_jpy).map(s=><div key={s.source_id}><span>{s.source_name}</span><strong>{yen(s.price_jpy)}</strong><span>{new Date(s.observed_at).toLocaleString("ja-JP",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div>)}</div>}
+ </section>}
+ <section className="head"><div><small>MARKET EXIT</small><h2>{q?"検索結果":"現在の買取レーダー"}</h2></div><button className="ghost" onClick={()=>load(q,!!q)}>↻ 更新</button></section>
+ <section className="grid">{busy?<div className="empty">価格データを読み込んでいます…</div>:prices.length?prices.map((p,i)=>{const exit=p.best_exit_price_jpy??p.cardrush_buy_price_jpy;const profit=cost>0&&exit!=null?exit-cost:null;const roi=profit!=null?profit/cost*100:null;return <article key={p.product_id} className={selected===p.product_id?"selected":""} onClick={()=>setSelected(p.product_id)}><small>#{String(i+1).padStart(2,"0")}</small><h3>{p.canonical_name}</h3><label>{p.set_name??"その他"} · {p.card_number??"—"} · {p.rarity??"—"}</label><div className="price"><span>BEST EXIT</span><b>{yen(exit)}</b></div><p className="source">{p.best_exit_source_name??"—"} · {p.cross_source_spread_jpy!=null?("Spread "+yen(p.cross_source_spread_jpy)):"比較待ち"}</p><input className="buy" inputMode="numeric" placeholder="店頭仕入れ価格 ¥" value={cost||""} onClick={e=>e.stopPropagation()} onChange={e=>setCost(Number(e.target.value.replace(/\D/g,""))||0)}/>{roi!=null&&<div className={roi>0?"profit":"loss"}>{profit!>=0?"+":""}{yen(profit)} <span>ROI {roi.toFixed(1)}%</span></div>}<div className="trend-link">📈 相場推移を見る →</div></article>}) : <div className="empty">一致する価格データがありません。</div>}</section>
  </>:<section className="calculator"><small>FAST DECISION</small><h2>仕入れ判定</h2><p>店頭価格と出口価格を入力して、交通費などを含めた簡易ROIを計算できます。</p><label>仕入れ価格<input id="buy" inputMode="numeric" placeholder="12000"/></label><label>出口価格<input id="exit" inputMode="numeric" placeholder="18000"/></label><label>その他コスト<input id="other" inputMode="numeric" placeholder="500"/></label><button onClick={()=>{const b=Number((document.getElementById("buy") as HTMLInputElement).value||0),e=Number((document.getElementById("exit") as HTMLInputElement).value||0),o=Number((document.getElementById("other") as HTMLInputElement).value||0),p=e-b-o,r=b?p/b*100:0;const el=document.getElementById("result");if(el)el.textContent=b?((p>=0?"+":"")+yen(p)+" · ROI "+r.toFixed(1)+"%"):"仕入れ価格を入力してください"}}>計算する</button><div id="result" className="result">仕入れ価格を入力してください</div><small className="notice">※ 実際の買取額はカード状態、在庫、買取制限、店舗条件、交通費等で変動します。画面のROIは入力値による試算です。</small></section>}
  <section className="sources"><small>DATA SOURCE STATUS</small><h2>データソース</h2>{sources.map((s:any)=><div className="src" key={s.id}><i className={s.health_status==="LIVE"?"on":""}/><span>{s.name}<small>{s.health_status} · {Number(s.latest_product_count||0).toLocaleString()}件</small></span></div>)}</section>
  <footer>Cross-Border Seller Radar · Supabase × Vercel</footer>
