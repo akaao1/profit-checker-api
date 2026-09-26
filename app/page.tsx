@@ -3,6 +3,7 @@ import {useEffect,useMemo,useRef,useState} from "react";
 
 type Price={product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;cardrush_buy_price_jpy:number|null;cardrush_latest_price_jpy:number|null;cardrush_latest_observed_at:string|null;hareruya_latest_price_jpy:number|null;hareruya_latest_observed_at:string|null;best_exit_price_jpy:number|null;best_exit_source_name:string|null;cross_source_spread_jpy:number|null;cross_source_spread_percent:string|null};
 type HistoryRow={product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;source_id:string;source_name:string;observed_day:string;price_jpy:number;observed_at:string};
+type ChangeRow={rank:number;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;current_price_jpy:number;previous_price_jpy:number;change_jpy:number;change_percent:number;current_observed_at:string;previous_observed_at:string};
 const yen=(n:number|null|undefined)=>n==null?"—":"¥"+Math.round(n).toLocaleString("ja-JP");
 const pct=(n:number|null|undefined)=>n==null?"—":(n>=0?"+":"")+n.toFixed(1)+"%";
 const daysAgo=(iso:string,d:number)=>new Date(iso).getTime()>=Date.now()-d*86400000;
@@ -21,7 +22,7 @@ export default function Home(){
  async function load(name="",number="",withHistory=false){setBusy(true);try{const params=new URLSearchParams();if(name.trim())params.set("card_name",name.trim());if(number.trim())params.set("card_number",number.trim());if(withHistory){params.set("history","1");params.set("days","90");params.set("limit","30")}const r=await fetch("/api/radar"+(params.size?"?"+params:""),{cache:"no-store"});setData(await r.json());setSelected(null)}catch{}finally{setBusy(false)}}
  useEffect(()=>{load()},[]);
  useEffect(()=>{if(selected&&detailRef.current)requestAnimationFrame(()=>detailRef.current?.scrollIntoView({behavior:"smooth",block:"start"}))},[selected]);
- const prices:Price[]=data?.prices??[],sources=data?.sources??[],history:HistoryRow[]=data?.history??[],hasSearch=!!(cardName.trim()||cardNumber.trim());
+ const prices:Price[]=data?.prices??[],sources=data?.sources??[],history:HistoryRow[]=data?.history??[],changeRankings=(data?.change_rankings??{CD:[],HA:[]}) as {CD:ChangeRow[];HA:ChangeRow[]},hasSearch=!!(cardName.trim()||cardNumber.trim());
  const live=sources.filter((s:any)=>s.enabled&&s.latest_product_count>0&&(s.name==="CardRush"||s.name==="晴れる屋2")),positive=prices.filter(p=>(p.cross_source_spread_jpy??0)>0).length,searchCount=(data?.search??[]).length;
  const summary=useMemo(()=>{const exits=prices.map(p=>p.best_exit_price_jpy??p.cardrush_buy_price_jpy).filter(Boolean) as number[];return exits.length?Math.round(exits.reduce((a,b)=>a+b,0)/exits.length):0},[prices]);
  const selectedPrice=prices.find(p=>p.product_id===selected)??null;
@@ -35,7 +36,13 @@ export default function Home(){
  <nav className="tabs"><button className={tab==="radar"?"active":""} onClick={()=>setTab("radar")}>価格レーダー</button><button className={tab==="calc"?"active":""} onClick={()=>setTab("calc")}>仕入れ判定</button></nav>
  {tab==="radar"?<>
  <section className="search"><input value={cardName} onChange={e=>setCardName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load(cardName,cardNumber,true)} placeholder="カード名（例：ピカチュウ）"/><input value={cardNumber} onChange={e=>setCardNumber(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load(cardName,cardNumber,true)} placeholder="型番（例：205/187）"/><button onClick={()=>load(cardName,cardNumber,true)}>検索</button></section>
- {hasSearch&&<div className="hint">{searchCount}件のカード候補 · 行をクリックすると価格推移へ移動</div>}
+ {hasSearch&&<div className="hint">{searchCount}件のカード候補 · 行をクリックすると価格推移へ移動</div>}{!hasSearch&&<section className="change-ranking">
+   <div className="head"><div><small>PRICE CHANGE</small><h2>前回比 変動ランキング</h2></div><span className="ranking-note">0%変動は除外 · 同一買取先内で比較</span></div>
+   <div className="ranking-grid">{(["CD","HA"] as const).map(channel=><div className="ranking-card" key={channel}>
+     <div className="ranking-card-head"><b>{channel}</b><span>前回 → 現在</span></div>
+     {changeRankings[channel].length?changeRankings[channel].map((r,i)=><button type="button" className="ranking-row" key={r.product_id} onClick={()=>{setCardName(r.canonical_name);setCardNumber(r.card_number??"");load(r.canonical_name,r.card_number??"",true)}}><span className="rank-no">{i+1}</span><span className="rank-name"><strong>{r.canonical_name}</strong><small>{r.set_name??"—"} · {r.card_number??"—"}</small></span><span className="rank-prices"><small>{yen(r.previous_price_jpy)} → {yen(r.current_price_jpy)}</small><b className={r.change_percent>=0?"profit":"loss"}>{pct(r.change_percent)}</b></span></button>):<div className="ranking-empty">まだ前回値と比較できる変動データがありません。</div>}
+   </div>)}</div>
+ </section>}
  {selectedPrice&&<section className="detail" ref={detailRef}>
    <button className="back" onClick={()=>setSelected(null)}>← 検索結果へ戻る</button>
    <div className="detail-title"><div><small>PRICE HISTORY · 90 DAYS</small><h2>{selectedPrice.canonical_name}</h2><p>{selectedPrice.set_name??"その他"} · {selectedPrice.card_number??"—"} · {selectedPrice.rarity??"—"}</p></div><div className="detail-current"><span>BEST EXIT</span><b>{yen(selectedPrice.best_exit_price_jpy??selectedPrice.cardrush_buy_price_jpy)}</b></div></div>
