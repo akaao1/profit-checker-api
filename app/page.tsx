@@ -4,6 +4,7 @@ import {useEffect,useMemo,useRef,useState} from "react";
 type Price={product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;cardrush_buy_price_jpy:number|null;cardrush_latest_price_jpy:number|null;cardrush_latest_observed_at:string|null;hareruya_latest_price_jpy:number|null;hareruya_latest_observed_at:string|null;best_exit_price_jpy:number|null;best_exit_source_name:string|null;cross_source_spread_jpy:number|null;cross_source_spread_percent:string|null};
 type HistoryRow={product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;source_id:string;source_name:string;observed_day:string;price_jpy:number;observed_at:string};
 type ChangeRow={rank:number;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;current_price_jpy:number;previous_price_jpy:number;change_jpy:number;change_percent:number;current_observed_at:string;previous_observed_at:string};
+type SpreadRow={rank:number;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;cd_price_jpy:number;ha_price_jpy:number;difference_jpy:number;difference_percent:number;cd_observed_at:string;ha_observed_at:string};
 const yen=(n:number|null|undefined)=>n==null?"—":"¥"+Math.round(n).toLocaleString("ja-JP");
 const pct=(n:number|null|undefined)=>n==null?"—":(n>=0?"+":"")+n.toFixed(1)+"%";
 const daysAgo=(iso:string,d:number)=>new Date(iso).getTime()>=Date.now()-d*86400000;
