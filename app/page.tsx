@@ -1,0 +1,1 @@
+export default function Home(){return <main><h1>Cross-Border Seller Radar</h1><p>Radar is coming online.</p></main>}
