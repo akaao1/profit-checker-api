@@ -20,7 +20,7 @@ export default function Home(){
  const[data,setData]=useState<any>(null),[cardName,setCardName]=useState(""),[cardNumber,setCardNumber]=useState(""),[busy,setBusy]=useState(true),[tab,setTab]=useState<"radar"|"calc">("radar"),[selected,setSelected]=useState<string|null>(null);
  const detailRef=useRef<HTMLElement|null>(null);
  async function load(name="",number="",withHistory=false,productId=""){setBusy(true);try{const params=new URLSearchParams();if(productId)params.set("product_id",productId);else {if(name.trim())params.set("card_name",name.trim());if(number.trim())params.set("card_number",number.trim())}if(withHistory){params.set("history","1");params.set("days","90");params.set("limit","100")}const r=await fetch("/api/radar"+(params.size?"?"+params:""),{cache:"no-store"});setData(await r.json());if(productId)setSelected(productId);else setSelected(null)}catch{}finally{setBusy(false)}}
- useEffect(()=>{load()},[]);
+ useEffect(()=>{const pid=new URLSearchParams(window.location.search).get("product_id");if(pid)load("","",true,pid);else load()},[]);
  useEffect(()=>{if(selected&&detailRef.current)requestAnimationFrame(()=>detailRef.current?.scrollIntoView({behavior:"smooth",block:"start"}))},[selected]);
  const prices:Price[]=data?.prices??[],sources=data?.sources??[],history:HistoryRow[]=data?.history??[],changeRankings=(data?.change_rankings??{CD:[],HA:[]}) as {CD:ChangeRow[];HA:ChangeRow[]},hasSearch=!!(cardName.trim()||cardNumber.trim());
  const live=sources.filter((s:any)=>s.enabled&&s.latest_product_count>0&&(s.name==="CardRush"||s.name==="晴れる屋2")),positive=prices.filter(p=>(p.cross_source_spread_jpy??0)>0).length,searchCount=(data?.search??[]).length;
