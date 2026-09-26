@@ -1,2 +1,2 @@
 import {NextResponse} from "next/server";
-export async function GET(){const base=process.env.RADAR_API_URL||["https:","//whkxkdxpndajqkkqmrcu.supabase.co/functions/v1/radar-api"].join("");const r=await fetch(base,{cache:"no-store"});return NextResponse.json(await r.json())}
+export async function GET(req:Request){const base=process.env.RADAR_API_URL||["https:","//whkxkdxpndajqkkqmrcu.supabase.co/functions/v1/radar-api"].join("");const u=new URL(req.url),target=new URL(base);u.searchParams.forEach((v,k)=>target.searchParams.set(k,v));const r=await fetch(target.toString(),{cache:"no-store"});return NextResponse.json(await r.json())}
