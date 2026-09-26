@@ -44,6 +44,16 @@ export default function Home(){
      {changeRankings[channel].length?changeRankings[channel].map((r,i)=><button type="button" className="ranking-row" key={r.product_id} onClick={()=>{setCardName(r.canonical_name);setCardNumber(r.card_number??"");load(r.canonical_name,r.card_number??"",true,r.product_id)}}><span className="rank-no">{i+1}</span><span className="rank-name"><strong>{r.canonical_name}</strong><small>{r.set_name??"—"} · {r.card_number??"—"}</small></span><span className="rank-prices"><span className="rank-price-line"><b>{yen(r.previous_price_jpy)}</b><span>→</span><b>{yen(r.current_price_jpy)}</b></span><span className="rank-change"><b className={r.change_jpy>=0?"profit":"loss"}>{r.change_jpy>=0?"+":""}{yen(Math.abs(r.change_jpy))}</b><b className={r.change_percent>=0?"profit":"loss"}>{pct(r.change_percent)}</b></span><em>{new Date(r.previous_observed_at).toLocaleString("ja-JP")} → {new Date(r.current_observed_at).toLocaleString("ja-JP")}</em></span></button>):<div className="ranking-empty">まだ前回値と比較できる変動データがありません。</div>}
    </div>)}</div>
  </section>}
+ <section className="spread-ranking">
+ <div className="head"><div><small>BUYBACK SPREAD</small><h2>CD / HA 買取価格差ランキング</h2></div><div className="ranking-actions"><span className="ranking-note">同一SKUのみ比較 · 同額は除外</span><a className="all-changes-link" href="/spreads">すべて見る →</a></div></div>
+ <div className="ranking-grid">{(["HA","CD"] as const).map(channel=><div className="ranking-card" key={channel}>
+ <div className="ranking-card-head"><b>{channel} が高い</b><span>価格差の大きい順</span></div>
+ {spreadRankings[channel].length?spreadRankings[channel].map((r,i)=><a className="spread-row" key={r.product_id} href={"/?product_id="+encodeURIComponent(r.product_id)}>
+ <span className="rank-no">{i+1}</span><span className="rank-name"><strong>{r.canonical_name}</strong><small>{r.set_name??"—"} · {r.card_number??"—"}</small></span>
+ <span className="spread-prices"><span><i>CD</i> {yen(r.cd_price_jpy)}</span><span><i>HA</i> {yen(r.ha_price_jpy)}</span><b className="profit">+{yen(Math.abs(r.difference_jpy))}</b><em>{r.difference_percent.toFixed(1)}%</em></span>
+ </a>):<div className="ranking-empty">比較可能な価格差データがありません。</div>}
+ </div>)}</div>
+ </section>
  {selectedPrice&&<section className="detail" ref={detailRef}>
    <button className="back" onClick={()=>setSelected(null)}>← 検索結果へ戻る</button>
    <div className="detail-title"><div><small>PRICE HISTORY · 90 DAYS</small><h2>{selectedPrice.canonical_name}</h2><p>{selectedPrice.set_name??"その他"} · {selectedPrice.card_number??"—"} · {selectedPrice.rarity??"—"}</p></div><div className="detail-current"><span>BEST EXIT</span><b>{yen(selectedPrice.best_exit_price_jpy??selectedPrice.cardrush_buy_price_jpy)}</b></div></div>
