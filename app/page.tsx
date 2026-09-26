@@ -14,7 +14,7 @@ export default function Home(){
  return <main>
  <header><div className="brand"><span>⚡</span><div><b>Cross-Border Seller Radar</b><small>AKIHABARA · LIVE BUYBACK INTELLIGENCE</small></div></div><span className="live">● LIVE</span></header>
  <section className="hero"><div><small>RAW CARD → BEST EXIT</small><h1>店頭で見つけた瞬間に、<br/><em>売り先まで判断する。</em></h1><p>複数の買取データを横断し、カードを見つけたその場で出口価格と仕入れ採算を確認するためのレーダーです。</p><div className="hero-stats"><span><b>{live.length}</b> LIVE SOURCES</span><span><b>{prices.length.toLocaleString()}</b> COMPARISONS</span><span><b>{positive}</b> POSITIVE SPREADS</span></div></div><aside><small>平均 BEST EXIT</small><strong>{yen(summary)}</strong><label>現在表示中の価格</label></aside></section>
- <nav className="tabs"><button className={tab==="radar"?"active":""} onClick={()=>setTab("radar")}>価格レーダー</button><button className={tab==="calc"?"active":""} onClick={()=>setTab("calc")}>仕入れ判定</button></nav>
+ <div style={{maxWidth:1106,margin:"0 auto",padding:"0 22px 18px"}}><a href="/scan" style={{color:"#73e8a2",fontSize:11,fontWeight:800}}>📹 店頭動画をスキャンする →</a></div><nav className="tabs"><button className={tab==="radar"?"active":""} onClick={()=>setTab("radar")}>価格レーダー</button><button className={tab==="calc"?"active":""} onClick={()=>setTab("calc")}>仕入れ判定</button></nav>
  {tab==="radar"?<>
  <section className="search"><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load(q)} placeholder="カード名を検索（例：ピカチュウ）"/><button onClick={()=>load(q)}>検索</button></section>
  {q&&<div className="hint">{searchCount}件のカード候補 · Enterまたは検索でレーダーを絞り込み</div>}
