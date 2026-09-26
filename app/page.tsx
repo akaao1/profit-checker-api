@@ -50,7 +50,7 @@ export default function Home(){
  <div className="ranking-grid">{(["HA","CD"] as const).map(channel=><div className="ranking-card" key={channel}>
  <div className="ranking-card-head"><b>{channel} が高い</b><span>価格差の大きい順</span></div>
  {spreadRankings[channel].length?spreadRankings[channel].map((r,i)=><a className="spread-row" key={r.product_id} href={"/?product_id="+encodeURIComponent(r.product_id)}>
- <span className="rank-no">{i+1}</span><span className="rank-name"><strong>{r.canonical_name}</strong><small>{r.set_name??"—"} · {r.card_number??"—"}</small></span>
+ <span className="rank-no">{i+1}</span><span className="rank-name"><strong>{r.canonical_name}</strong><small>{r.set_name??"—"} · <b className="rank-card-number">{r.card_number??"—"}</b></small></span>
  <span className="spread-prices"><span><i>CD</i> {yen(r.cd_price_jpy)}</span><span><i>HA</i> {yen(r.ha_price_jpy)}</span><b className="profit">+{yen(Math.abs(r.difference_jpy))}</b><em>{r.difference_percent.toFixed(1)}%</em></span>
  </a>):<div className="ranking-empty">比較可能な価格差データがありません。</div>}
  </div>)}</div>
