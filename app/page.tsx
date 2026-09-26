@@ -4,6 +4,7 @@ import {useEffect,useMemo,useRef,useState} from "react";
 type Price={product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;cardrush_buy_price_jpy:number|null;cardrush_latest_price_jpy:number|null;cardrush_latest_observed_at:string|null;hareruya_latest_price_jpy:number|null;hareruya_latest_observed_at:string|null;best_exit_price_jpy:number|null;best_exit_source_name:string|null;cross_source_spread_jpy:number|null;cross_source_spread_percent:string|null};
 type HistoryRow={product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;source_id:string;source_name:string;observed_day:string;price_jpy:number;observed_at:string};
 const yen=(n:number|null|undefined)=>n==null?"—":"¥"+Math.round(n).toLocaleString("ja-JP");
+const sourceLabel=(name:string|null|undefined)=>name==="CardRush"?"CD":name==="晴れる屋2"?"HA":name??"—";
 const pct=(n:number|null|undefined)=>n==null?"—":(n>=0?"+":"")+n.toFixed(1)+"%";
 const daysAgo=(iso:string,d:number)=>new Date(iso).getTime()>=Date.now()-d*86400000;
 
@@ -38,7 +39,7 @@ export default function Home(){
  {hasSearch&&<div className="hint">{searchCount}件のカード候補 · 行をクリックすると価格推移へ移動</div>}
  {selectedPrice&&<section className="detail" ref={detailRef}>
    <button className="back" onClick={()=>setSelected(null)}>← 検索結果へ戻る</button>
-   <div className="detail-title"><div><small>PRICE HISTORY · 90 DAYS</small><h2>{selectedPrice.canonical_name}</h2><p>{selectedPrice.set_name??"その他"} · {selectedPrice.card_number??"—"} · {selectedPrice.rarity??"—"}</p></div><div className="detail-current"><span>BEST EXIT</span><b>{yen(selectedPrice.best_exit_price_jpy??selectedPrice.cardrush_buy_price_jpy)}</b><small>{selectedPrice.best_exit_source_name??"—"}</small></div></div>
+   <div className="detail-title"><div><small>PRICE HISTORY · 90 DAYS</small><h2>{selectedPrice.canonical_name}</h2><p>{selectedPrice.set_name??"その他"} · {selectedPrice.card_number??"—"} · {selectedPrice.rarity??"—"}</p></div><div className="detail-current"><span>BEST EXIT</span><b>{yen(selectedPrice.best_exit_price_jpy??selectedPrice.cardrush_buy_price_jpy)}</b><small>{sourceLabel(selectedPrice.best_exit_source_name)}</small></div></div>
    {stats&&<div className="stat-grid"><div><span>7日変化</span><b className={(stats.c7??0)>=0?"profit":"loss"}>{pct(stats.c7)}</b></div><div><span>30日変化</span><b className={(stats.c30??0)>=0?"profit":"loss"}>{pct(stats.c30)}</b></div><div><span>90日最高</span><b>{yen(stats.max)}</b></div><div><span>90日最低</span><b>{yen(stats.min)}</b></div></div>}
    <HistoryChart rows={selectedHistory}/>
    {stats&&<div className="history-table"><div><span>データソース</span><strong>最新買取</strong><strong>観測時刻</strong></div>{stats.sources.sort((a,b)=>b.price_jpy-a.price_jpy).map(s=><div key={s.source_id}><span>{s.source_name}</span><strong>{yen(s.price_jpy)}</strong><span>{new Date(s.observed_at).toLocaleString("ja-JP",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div>)}</div>}
