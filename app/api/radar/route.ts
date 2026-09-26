@@ -1,0 +1,2 @@
+import {NextResponse} from "next/server";
+export async function GET(){const base=process.env.RADAR_API_URL||["https:","//whkxkdxpndajqkkqmrcu.supabase.co/functions/v1/radar-api"].join("");const r=await fetch(base,{cache:"no-store"});return NextResponse.json(await r.json())}
