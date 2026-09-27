@@ -5,19 +5,19 @@ const API="https://whkxkdxpndajqkkqmrcu.supabase.co/functions/v1/scan-session-ap
 const STORAGE="https://whkxkdxpndajqkkqmrcu.supabase.co/storage/v1/object/upload/sign/store-scan-videos/";
 const MAX_FRAMES=80;
 
-async function jsonFetch(input:string,init?:RequestInit){
+async function jsonFetch(input:any,init?:any):Promise<any>{
  const r=await fetch(input,init);
  const data=await r.json().catch(()=>({}));
  if(!r.ok||data.ok===false)throw new Error(data.error||`HTTP ${r.status}`);
  return data;
 }
-function sha256Hex(buffer:ArrayBuffer){
+function sha256Hex(buffer:any):Promise<string>{
  return crypto.subtle.digest("SHA-256",buffer).then(hash=>Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,"0")).join(""));
 }
-function blobFromCanvas(canvas:HTMLCanvasElement){
+function blobFromCanvas(canvas:any):Promise<any>{
  return new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error("フレーム画像の生成に失敗しました")),"image/jpeg",0.82));
 }
-function seek(video:HTMLVideoElement,time:number){
+function seek(video:any,time:number):Promise<void>{
  return new Promise<void>((resolve,reject)=>{
   const done=()=>{cleanup();resolve()};
   const fail=()=>{cleanup();reject(new Error("動画フレームの読み込みに失敗しました"))};
@@ -27,7 +27,7 @@ function seek(video:HTMLVideoElement,time:number){
   video.currentTime=time;
  });
 }
-async function loadVideo(url:string){
+async function loadVideo(url:string):Promise<any>{
  const video=document.createElement("video");
  video.preload="metadata";
  video.muted=true;
@@ -65,7 +65,7 @@ export default function Scan(){
    const scale=Math.min(1,1280/Math.max(1,video.videoWidth));
    canvas.width=Math.max(1,Math.round(video.videoWidth*scale));
    canvas.height=Math.max(1,Math.round(video.videoHeight*scale));
-   const samples:{timestamp_ms:number;blob:Blob;hash:string}[]=[];
+   const samples:any[]=[];
    for(let i=0;i<frameCount;i++){
     const sec=Math.min(duration-0.05,Math.max(0,i*interval));
     await seek(video,sec);
@@ -81,7 +81,7 @@ export default function Scan(){
    if(!samples.length)throw new Error("保存できるフレームがありませんでした");
    
    const urls=await jsonFetch(API,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"frame_upload_urls",session_id:a.session.id,timestamps_ms:samples.map(x=>x.timestamp_ms)})});
-   const byTs=new Map(urls.uploads.map((x:any)=>[Number(x.timestamp_ms),x]));
+   const byTs:any=new Map(urls.uploads.map((x:any)=>[Number(x.timestamp_ms),x]));
    let uploaded=0;
    const workers=Array.from({length:Math.min(4,samples.length)},async()=>{
     while(true){
