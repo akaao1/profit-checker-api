@@ -20,7 +20,7 @@ type O = {
 type Health = {
   current_listing_count: number; current_cycle_staging_count: number; next_page: number; max_page: number; pages_per_run: number;
   last_completed_cycle_at: string | null; last_success_at: string | null; next_due_at: string | null;
-  current_snapshot_checked_at: string | null; current_snapshot_age_minutes: number | string | null;
+  current_snapshot_checked_at: string | null; current_snapshot_age_minutes: number | string | null; current_cycle_id: string | null; last_completed_cycle_id: string | null;
 };
 
 export default function Opportunities() {
@@ -42,7 +42,7 @@ export default function Opportunities() {
     }).catch((e) => setErr(e.message)).finally(() => setLoading(false));
   }, []);
 
-  const building = !!health && !health.last_completed_cycle_at;
+  const building = !!health && health.current_cycle_id !== health.last_completed_cycle_id;
   const age = health?.current_snapshot_age_minutes;
   const ageText = age == null ? "—" : Math.round(Number(age)) + "分前";
 
