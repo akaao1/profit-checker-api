@@ -78,3 +78,6 @@
   .mobile-price-table td b{font-size:11.5px}
   .mobile-price-table td small{font-size:7.5px}
 }
+
+.variant-inline{display:block;color:#73e8a2;font-size:8px;margin-top:3px;font-weight:800;letter-spacing:.02em}
+@media(max-width:800px){.mobile-price-table td:first-child small{color:#73e8a2}.mobile-price-table td:first-child small::first-line{color:#73e8a2}}
