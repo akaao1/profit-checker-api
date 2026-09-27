@@ -5,7 +5,7 @@ const API="https://whkxkdxpndajqkkqmrcu.supabase.co/functions/v1/scan-session-ap
 const STORAGE="https://whkxkdxpndajqkkqmrcu.supabase.co/storage/v1/object/upload/sign/store-scan-videos/";
 const MAX_FRAMES=80;
 
-async function jsonFetch(input:RequestInfo|URL,init?:RequestInit){
+async function jsonFetch(input:string,init?:RequestInit){
  const r=await fetch(input,init);
  const data=await r.json().catch(()=>({}));
  if(!r.ok||data.ok===false)throw new Error(data.error||`HTTP ${r.status}`);
