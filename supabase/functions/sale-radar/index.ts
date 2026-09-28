@@ -175,7 +175,7 @@ async function fetchCollectionStockMap(baseUrl: string, collection: string, page
         return new Map<string, { qty: number; source: string }>();
       }
       const html = await r.text();
-      const handles = [...new Set([...html.matchAll(/\\/products\\/([^"?'#\\s<>]+)/g)].map(m => decodeURIComponent(m[1])))];
+      const handles = [...new Set([...html.matchAll(/\/products\/([^"?#\\s<>]+)/g)].map(m => decodeURIComponent(m[1])))];
       const positions = handles.map(handle => ({ handle, pos: html.indexOf("/products/" + handle) })).filter(x => x.pos >= 0).sort((a,b) => a.pos-b.pos);
       const out = new Map<string, { qty: number; source: string }>();
       for (let i = 0; i < positions.length; i++) {
