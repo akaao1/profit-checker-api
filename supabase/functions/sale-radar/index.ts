@@ -504,12 +504,17 @@ Deno.serve(async (req) => {
 
     if (b.action === "refresh_opportunity_stock") {
       const q = await supabase.from("sale_current_opportunities_cd_ha")
-        .select("sale_observation_id,external_product_key,stock_qty,stock_qty_source,in_stock,raw_payload")
+        .select("sale_observation_id")
         .limit(200);
       if (q.error) throw q.error;
+      const ids = (q.data ?? []).map((x: any) => x.sale_observation_id).filter(Boolean);
+      const obs = ids.length
+        ? await supabase.from("sale_observations").select("id,external_product_key,stock_qty,stock_qty_source,in_stock,raw_payload").in("id", ids)
+        : { data: [], error: null };
+      if (obs.error) throw obs.error;
       let refreshed = 0, exact = 0;
       const source = await sourceConfig();
-      for (const row of q.data ?? []) {
+      for (const row of obs.data ?? []) {
         const handle = row.raw_payload?.handle ? String(row.raw_payload.handle) : null;
         const r = await fetchExactStockQty(source.base_url, handle, row.in_stock);
         if (r.qty == null || !row.external_product_key) continue;
