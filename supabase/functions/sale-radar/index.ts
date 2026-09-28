@@ -512,25 +512,29 @@ Deno.serve(async (req) => {
         ? await supabase.from("sale_observations").select("id,external_product_key,stock_qty,stock_qty_source,in_stock,raw_payload").in("id", ids)
         : { data: [], error: null };
       if (obs.error) throw obs.error;
-      let refreshed = 0, exact = 0;
       const source = await sourceConfig();
-      for (const row of obs.data ?? []) {
+      const results = await Promise.all((obs.data ?? []).map(async (row: any) => {
         const handle = row.raw_payload?.handle ? String(row.raw_payload.handle) : null;
         const r = await fetchExactStockQty(source.base_url, handle, row.in_stock);
-        if (r.qty == null || !row.external_product_key) continue;
+        return { row, result: r };
+      }));
+      const updates = results.filter(x => x.row.external_product_key && x.result.qty != null);
+      await Promise.all(updates.map(async ({ row, result }) => {
         const patch = {
-          stock_qty: r.qty,
-          stock_qty_source: r.source,
+          stock_qty: result.qty,
+          stock_qty_source: result.source,
           stock_qty_observed_at: new Date().toISOString(),
-          raw_payload: { ...(row.raw_payload ?? {}), stock_qty_source: r.source, stock_qty_exact: true },
+          raw_payload: { ...(row.raw_payload ?? {}), stock_qty_source: result.source, stock_qty_exact: true },
         };
-        const u = await supabase.from("sale_observations").update(patch).eq("id", row.sale_observation_id);
+        const u = await supabase.from("sale_observations").update(patch).eq("id", row.id);
         if (u.error) throw u.error;
-        refreshed++;
-        exact++;
-        await new Promise(r2 => setTimeout(r2, 300 + Math.floor(Math.random() * 500)));
-      }
-      return new Response(JSON.stringify({ ok: true, candidates: q.data?.length ?? 0, refreshed, exact }), { headers: cors });
+      }));
+      return new Response(JSON.stringify({
+        ok: true,
+        candidates: obs.data?.length ?? 0,
+        refreshed: updates.length,
+        exact: updates.filter(x => x.result.source !== "availability").length,
+      }), { headers: cors });
     }
 
     if (b.action === "opportunities") {
