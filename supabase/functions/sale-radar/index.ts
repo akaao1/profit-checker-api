@@ -159,26 +159,63 @@ async function fetchExactStockQty(baseUrl: string, handle: string | null, fallba
   return { qty: fallbackAvailable === false ? 0 : null, source: fallbackAvailable === false ? "availability" : null };
 }
 
-async function enrichUnknownStock(rows: any[], baseUrl: string, limit = 30) {
+async function fetchCollectionStockMap(baseUrl: string, collection: string, page: number) {
+  const root = baseUrl.replace(/\\/$/, "");
+  const url = root + "/collections/" + collection + "?page=" + page;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const r = await fetch(url, {
+        headers: { accept: "text/html,application/xhtml+xml", "user-agent": "Cross-Border-Seller-Radar/6.3" },
+      });
+      if (!r.ok) {
+        if (r.status === 429 || r.status >= 500) {
+          await new Promise(r2 => setTimeout(r2, 1500 + Math.floor(Math.random() * 2500)));
+          continue;
+        }
+        return new Map<string, { qty: number; source: string }>();
+      }
+      const html = await r.text();
+      const handles = [...new Set([...html.matchAll(/\\/products\\/([^"?'#\\s<>]+)/g)].map(m => decodeURIComponent(m[1])))];
+      const positions = handles.map(handle => ({ handle, pos: html.indexOf("/products/" + handle) })).filter(x => x.pos >= 0).sort((a,b) => a.pos-b.pos);
+      const out = new Map<string, { qty: number; source: string }>();
+      for (let i = 0; i < positions.length; i++) {
+        const cur = positions[i];
+        const next = positions.slice(i + 1).find(x => x.handle !== cur.handle);
+        const segment = html.slice(cur.pos, next?.pos ?? Math.min(html.length, cur.pos + 18000));
+        const noStock = /在庫\\s*なし|在庫\\s*0\\s*(?:個|点|枚)?/i.test(segment);
+        if (noStock) {
+          out.set(cur.handle, { qty: 0, source: "collection_html" });
+          continue;
+        }
+        const m = segment.match(/在庫\\s*(?:数|数量)?\\s*[:：]?\\s*(\\d+)\\s*(?:個|点|枚)?/i) ||
+          segment.match(/在庫\\s+(\\d+)\\s*(?:個|点|枚)?/i);
+        if (m) {
+          const qty = Number(m[1]);
+          if (Number.isInteger(qty) && qty >= 0) out.set(cur.handle, { qty, source: "collection_html" });
+        }
+      }
+      return out;
+    } catch {
+      if (attempt === 2) return new Map<string, { qty: number; source: string }>();
+      await new Promise(r2 => setTimeout(r2, 1500 + Math.floor(Math.random() * 2500)));
+    }
+  }
+  return new Map<string, { qty: number; source: string }>();
+}
+
+async function enrichUnknownStock(rows: any[], baseUrl: string, limit = 20) {
   const targets = rows.filter(x => x.external_product_key && x.stock_qty == null).slice(0, limit);
   for (let i = 0; i < targets.length; i += 1) {
-    const batch = targets.slice(i, i + 1);
-    const results = await Promise.all(batch.map(async row => {
-      const handle = row.raw_payload?.handle ? String(row.raw_payload.handle) : null;
-      const r = await fetchExactStockQty(baseUrl, handle, row.in_stock);
-      return { row, ...r };
-    }));
-    for (const x of results) {
-      if (x.qty != null) {
-        x.row.stock_qty = x.qty;
-        x.row.stock_qty_source = x.source;
-        x.row.stock_qty_observed_at = new Date().toISOString();
-        x.row.raw_payload = { ...(x.row.raw_payload ?? {}), stock_qty_source: x.source, stock_qty_exact: true };
-      }
+    const row = targets[i];
+    const handle = row.raw_payload?.handle ? String(row.raw_payload.handle) : null;
+    const r = await fetchExactStockQty(baseUrl, handle, row.in_stock);
+    if (r.qty != null) {
+      row.stock_qty = r.qty;
+      row.stock_qty_source = r.source;
+      row.stock_qty_observed_at = new Date().toISOString();
+      row.raw_payload = { ...(row.raw_payload ?? {}), stock_qty_source: r.source, stock_qty_exact: true };
     }
-    if (i + 1 < targets.length) {
-      await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random() * 900)));
-    }
+    if (i + 1 < targets.length) await new Promise(r2 => setTimeout(r2, 500 + Math.floor(Math.random() * 700)));
   }
 }
 
@@ -197,6 +234,15 @@ async function run(b: any) {
     const all: any[] = [];
     for (let p = pageStart; p < pageStart + pageCount; p++) {
       const d = await fetchPage(p, collection, source.base_url);
+      const stockMap = await fetchCollectionStockMap(source.base_url, collection, p);
+      for (const product of (Array.isArray(d?.products) ? d.products : [])) {
+        const handle = product?.handle ? String(product.handle) : null;
+        const stock = handle ? stockMap.get(handle) : null;
+        if (stock) {
+          product.__collection_stock_qty = stock.qty;
+          product.__collection_stock_source = stock.source;
+        }
+      }
       if (p < pageStart + pageCount - 1) {
         await new Promise(r => setTimeout(r, 900 + Math.floor(Math.random() * 1100)));
       }
@@ -291,7 +337,9 @@ async function run(b: any) {
         variant_key: variantKey(x.name),
         variant_base_name: variantBase(x.name),
         sale_price_jpy: price,
-        stock_qty: Number.isFinite(qty) && qty > 0 ? qty : (available ? null : 0),
+        stock_qty: p.__collection_stock_qty != null ? Number(p.__collection_stock_qty) : (Number.isFinite(qty) && qty > 0 ? qty : (available ? null : 0)),
+        stock_qty_source: p.__collection_stock_qty != null ? String(p.__collection_stock_source ?? "collection_html") : (Number.isFinite(qty) && qty > 0 ? "source_json" : (available ? null : "availability")),
+        stock_qty_observed_at: p.__collection_stock_qty != null ? new Date().toISOString() : null,
         in_stock: available,
         source_url: source.base_url.replace(/\/$/, "") + "/products/" + (p.handle ?? p.id),
         observed_at: new Date().toISOString(),
@@ -299,8 +347,8 @@ async function run(b: any) {
           source_id: p.id,
           handle: p.handle,
           collection,
-          stock_qty_source: Number.isFinite(qty) && qty > 0 ? "source_json" : (available ? null : "availability"),
-          stock_qty_exact: (Number.isFinite(qty) && qty > 0) || !available,
+          stock_qty_source: p.__collection_stock_qty != null ? String(p.__collection_stock_source ?? "collection_html") : (Number.isFinite(qty) && qty > 0 ? "source_json" : (available ? null : "availability")),
+          stock_qty_exact: p.__collection_stock_qty != null || (Number.isFinite(qty) && qty > 0) || !available,
           variants: vs.map((z: any) => ({
             id: z.id, available: z.available, price: z.price,
             inventory_quantity: z.inventory_quantity, sku: z.sku,
@@ -310,7 +358,7 @@ async function run(b: any) {
     }
 
     stage = "enrich_stock";
-    await enrichUnknownStock(rows, source.base_url, 2);
+    await enrichUnknownStock(rows, source.base_url, 20);
 
     stage = "insert_observations";
     for (let i = 0; i < rows.length; i += 25) {
