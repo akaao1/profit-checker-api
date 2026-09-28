@@ -160,7 +160,7 @@ async function fetchExactStockQty(baseUrl: string, handle: string | null, fallba
 }
 
 async function fetchCollectionStockMap(baseUrl: string, collection: string, page: number) {
-  const root = baseUrl.replace(/\\/$/, "");
+  const root = baseUrl.replace(/\/$/, "");
   const url = root + "/collections/" + collection + "?page=" + page;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
