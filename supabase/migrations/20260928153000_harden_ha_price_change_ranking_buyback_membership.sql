@@ -129,3 +129,6 @@ begin
   from _pcr;
 end;
 $function$;
+
+
+ALTER VIEW public.ha_current_stable_buy_prices SET (security_invoker = true);
