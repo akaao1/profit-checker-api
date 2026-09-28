@@ -502,6 +502,32 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, count: q.data?.length ?? 0, review: q.data ?? [] }), { headers: cors });
     }
 
+    if (b.action === "refresh_opportunity_stock") {
+      const q = await supabase.from("sale_current_opportunities_cd_ha")
+        .select("sale_observation_id,external_product_key,stock_qty,stock_qty_source,in_stock,raw_payload")
+        .limit(200);
+      if (q.error) throw q.error;
+      let refreshed = 0, exact = 0;
+      const source = await sourceConfig();
+      for (const row of q.data ?? []) {
+        const handle = row.raw_payload?.handle ? String(row.raw_payload.handle) : null;
+        const r = await fetchExactStockQty(source.base_url, handle, row.in_stock);
+        if (r.qty == null || !row.external_product_key) continue;
+        const patch = {
+          stock_qty: r.qty,
+          stock_qty_source: r.source,
+          stock_qty_observed_at: new Date().toISOString(),
+          raw_payload: { ...(row.raw_payload ?? {}), stock_qty_source: r.source, stock_qty_exact: true },
+        };
+        const u = await supabase.from("sale_observations").update(patch).eq("id", row.sale_observation_id);
+        if (u.error) throw u.error;
+        refreshed++;
+        exact++;
+        await new Promise(r2 => setTimeout(r2, 300 + Math.floor(Math.random() * 500)));
+      }
+      return new Response(JSON.stringify({ ok: true, candidates: q.data?.length ?? 0, refreshed, exact }), { headers: cors });
+    }
+
     if (b.action === "opportunities") {
       const q = await supabase.from("sale_current_opportunities_cd_ha")
         .select("sale_observation_id,product_id,canonical_name,set_name,card_number,rarity,product_name,condition_label,condition_group,is_primary_condition,sale_price_jpy,stock_qty,stock_qty_source,stock_qty_observed_at,sale_observed_at,cd_buy_price_jpy,cd_buy_observed_at,gross_spread_jpy,gross_margin_pct,variant_key,variant_base_name").order("gross_spread_jpy", { ascending: false })
