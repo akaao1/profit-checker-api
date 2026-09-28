@@ -87,7 +87,7 @@ export default function Opportunities() {
           </div>
           <a href={"/api/source-product?id=" + encodeURIComponent(x.sale_observation_id)} target="_blank" rel="noreferrer">HAの商品ページ ↗</a>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(130px,1fr))", gap: 10, marginTop: 18 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(130px,1fr))", gap: 10, marginTop: 18 }}>
           <div><small>販売価格</small><div style={{ fontSize: 22, fontWeight: 800 }}>{yen(x.sale_price_jpy)}</div><small>{x.stock_qty == null ? "在庫数量：取得待ち" : x.stock_qty === 0 ? "在庫数量：0枚（在庫なし）" : "在庫数量：" + x.stock_qty + "枚"}</small></div>
           <div><small>CD買取</small><div style={{ fontSize: 22, fontWeight: 800 }}>{yen(x.cd_buy_price_jpy)}</div><small>{dt(x.cd_buy_observed_at)}</small></div>
           <div><small>粗利差</small><div style={{ fontSize: 22, fontWeight: 800, color: "#73e8a2" }}>+{yen(x.gross_spread_jpy)}</div><small>販売価格比 {x.gross_margin_pct.toFixed(1)}%</small></div>
