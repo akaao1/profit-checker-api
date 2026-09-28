@@ -81,3 +81,5 @@
 
 .variant-inline{display:block;color:#73e8a2;font-size:8px;margin-top:3px;font-weight:800;letter-spacing:.02em}
 @media(max-width:800px){.mobile-price-table td:first-child small{color:#73e8a2}.mobile-price-table td:first-child small::first-line{color:#73e8a2}}
+
+.chart-legend-note{margin-left:auto;color:#687383}.chart-delta{font-size:8px;font-weight:900;paint-order:stroke;stroke:#0a0f15;stroke-width:3px}.chart-delta-up{fill:#73e8a2}.chart-delta-down{fill:#ff8b8b}@media(max-width:800px){.chart-legend-note{display:block;width:100%;margin:4px 0 0;font-size:7px}.chart-legend{gap:8px}.chart-delta{font-size:7px}}
