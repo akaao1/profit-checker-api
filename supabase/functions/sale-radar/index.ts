@@ -187,8 +187,8 @@ async function fetchCollectionStockMap(baseUrl: string, collection: string, page
           out.set(cur.handle, { qty: 0, source: "collection_html" });
           continue;
         }
-                const m = segment.match(/(?:在庫|残り|あと)[ 	]*(?:数|数量)?[ 	]*[:：]?[ 	]*(\\d+)[ 	]*(?:個|点|枚)?/i) ||
-          segment.match(/(?:only|remaining)[ 	]+(\\d+)[ 	]*(?:left|in[ 	]*stock)?/i);
+                const m = segment.match(/(?:在庫|残り|あと)[ 	]*(?:数|数量)?[ 	]*[:：]?[ 	]*(\d+)[ 	]*(?:個|点|枚)?/i) ||
+          segment.match(/(?:only|remaining)[ 	]+(\d+)[ 	]*(?:left|in[ 	]*stock)?/i);
         if (m) {
           const qty = Number(m[1]);
           if (Number.isInteger(qty) && qty >= 0) out.set(cur.handle, { qty, source: "collection_html" });
