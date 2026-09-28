@@ -187,8 +187,8 @@ async function fetchCollectionStockMap(baseUrl: string, collection: string, page
           out.set(cur.handle, { qty: 0, source: "collection_html" });
           continue;
         }
-                const m = segment.match(/在庫[ \t]*(?:数|数量)?[ \t]*[:：]?[ \t]*(\d+)[ \t]*(?:個|点|枚)?/i) ||
-          segment.match(/在庫[ \t]+(\d+)[ \t]*(?:個|点|枚)?/i);
+                const m = segment.match(/(?:在庫|残り|あと)[ 	]*(?:数|数量)?[ 	]*[:：]?[ 	]*(\\d+)[ 	]*(?:個|点|枚)?/i) ||
+          segment.match(/(?:only|remaining)[ 	]+(\\d+)[ 	]*(?:left|in[ 	]*stock)?/i);
         if (m) {
           const qty = Number(m[1]);
           if (Number.isInteger(qty) && qty >= 0) out.set(cur.handle, { qty, source: "collection_html" });
@@ -203,8 +203,24 @@ async function fetchCollectionStockMap(baseUrl: string, collection: string, page
   return new Map<string, { qty: number; source: string }>();
 }
 
-async function enrichUnknownStock(rows: any[], baseUrl: string, limit = 20) {
-  const targets = rows.filter(x => x.external_product_key && x.stock_qty == null).slice(0, limit);
+async function enrichUnknownStock(rows: any[], baseUrl: string, limit = 50) {
+  const unknown = rows.filter(x => x.external_product_key && x.stock_qty == null);
+  let prioritized = unknown;
+  const ids = [...new Set(unknown.map(x => x.product_id).filter(Boolean))];
+  if (ids.length) {
+    const cp = await supabase.from("cd_current_stable_prices").select("product_id,price_jpy").in("product_id", ids);
+    if (!cp.error) {
+      const buy = new Map((cp.data ?? []).map((x: any) => [x.product_id, Number(x.price_jpy)]));
+      prioritized = [...unknown].sort((a, b) => {
+        const ap = buy.get(a.product_id);
+        const bp = buy.get(b.product_id);
+        const aa = Number.isFinite(ap) && ap > Number(a.sale_price_jpy ?? 0);
+        const bb = Number.isFinite(bp) && bp > Number(b.sale_price_jpy ?? 0);
+        return Number(bb) - Number(aa);
+      });
+    }
+  }
+  const targets = prioritized.slice(0, limit);
   for (let i = 0; i < targets.length; i += 1) {
     const row = targets[i];
     const handle = row.raw_payload?.handle ? String(row.raw_payload.handle) : null;
@@ -215,7 +231,7 @@ async function enrichUnknownStock(rows: any[], baseUrl: string, limit = 20) {
       row.stock_qty_observed_at = new Date().toISOString();
       row.raw_payload = { ...(row.raw_payload ?? {}), stock_qty_source: r.source, stock_qty_exact: true };
     }
-    if (i + 1 < targets.length) await new Promise(r2 => setTimeout(r2, 500 + Math.floor(Math.random() * 700)));
+    if (i + 1 < targets.length) await new Promise(r2 => setTimeout(r2, 450 + Math.floor(Math.random() * 650)));
   }
 }
 
@@ -358,7 +374,7 @@ async function run(b: any) {
     }
 
     stage = "enrich_stock";
-    await enrichUnknownStock(rows, source.base_url, 20);
+    await enrichUnknownStock(rows, source.base_url, 50);
 
     stage = "insert_observations";
     for (let i = 0; i < rows.length; i += 25) {
