@@ -175,20 +175,20 @@ async function fetchCollectionStockMap(baseUrl: string, collection: string, page
         return new Map<string, { qty: number; source: string }>();
       }
       const html = await r.text();
-      const handles = [...new Set([...html.matchAll(/\/products\/([^"?#\\s<>]+)/g)].map(m => decodeURIComponent(m[1])))];
+            const handles = [...new Set([...html.matchAll(/\/products\/([^"?# \t\r\n<>]+)/g)].map(m => decodeURIComponent(m[1])))];
       const positions = handles.map(handle => ({ handle, pos: html.indexOf("/products/" + handle) })).filter(x => x.pos >= 0).sort((a,b) => a.pos-b.pos);
       const out = new Map<string, { qty: number; source: string }>();
       for (let i = 0; i < positions.length; i++) {
         const cur = positions[i];
         const next = positions.slice(i + 1).find(x => x.handle !== cur.handle);
         const segment = html.slice(cur.pos, next?.pos ?? Math.min(html.length, cur.pos + 18000));
-        const noStock = /在庫\\s*なし|在庫\\s*0\\s*(?:個|点|枚)?/i.test(segment);
+                const noStock = /在庫[ \t]*なし|在庫[ \t]*0[ \t]*(?:個|点|枚)?/i.test(segment);
         if (noStock) {
           out.set(cur.handle, { qty: 0, source: "collection_html" });
           continue;
         }
-        const m = segment.match(/在庫\\s*(?:数|数量)?\\s*[:：]?\\s*(\\d+)\\s*(?:個|点|枚)?/i) ||
-          segment.match(/在庫\\s+(\\d+)\\s*(?:個|点|枚)?/i);
+                const m = segment.match(/在庫[ \t]*(?:数|数量)?[ \t]*[:：]?[ \t]*(\d+)[ \t]*(?:個|点|枚)?/i) ||
+          segment.match(/在庫[ \t]+(\d+)[ \t]*(?:個|点|枚)?/i);
         if (m) {
           const qty = Number(m[1]);
           if (Number.isInteger(qty) && qty >= 0) out.set(cur.handle, { qty, source: "collection_html" });
