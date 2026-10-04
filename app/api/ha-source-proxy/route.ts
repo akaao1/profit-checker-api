@@ -65,6 +65,25 @@ export async function GET(req: Request) {
   const u=new URL(req.url);
   const page=Math.max(1,Number(u.searchParams.get("page")||"1"));
   const collection=(u.searchParams.get("collection")||"all").replace(/[^a-zA-Z0-9_-]/g,"");
+  const jsonUrl=SOURCE+"/collections/"+collection+"/products.json?limit=250&page="+page+"&sort_by=created-ascending";
+  for (let attempt=0; attempt<3; attempt++) {
+    await waitForSourceGap();
+    const jr=await fetch(jsonUrl,{headers:{accept:"application/json","user-agent":"Cross-Border-Seller-Radar/6.5","accept-language":"ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7"},cache:"no-store"});
+    if (jr.ok) {
+      const jd=await jr.json();
+      const products=Array.isArray(jd?.products)?jd.products:[];
+      if (products.length) {
+        return NextResponse.json({ok:true,page,collection,count:products.length,products},{headers:{"cache-control":"no-store"}});
+      }
+    }
+    if (jr.status!==429 && jr.status<500) break;
+    if (attempt<2) {
+      const retryAfter=Number(jr.headers.get("retry-after")||"0");
+      const backoff=retryAfter>0?Math.min(12000,retryAfter*1000):(4000*(attempt+1));
+      await new Promise(resolve=>setTimeout(resolve,backoff));
+    }
+  }
+
   const url=SOURCE+"/collections/"+collection+"?page="+page+"&sort_by=created-ascending";
   let r: Response | null = null;
   let lastStatus = 0;
@@ -91,4 +110,4 @@ export async function GET(req: Request) {
   return NextResponse.json({ok:true,page,collection,count:products.length,products},{headers:{"cache-control":"no-store"}});
 }
 
-// 429 backoff and source pacing enabled
+// 429 backoff, source pacing, and JSON collection pagination enabled
