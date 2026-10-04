@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
+
+const MIN_REQUEST_GAP_MS = 4000;
+let lastSourceRequestAt = 0;
+
+async function waitForSourceGap() {
+  const now = Date.now();
+  const wait = Math.max(0, MIN_REQUEST_GAP_MS - (now - lastSourceRequestAt));
+  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+  lastSourceRequestAt = Date.now();
+}
 
 const SOURCE = "https://www.hareruya2.com";
 
@@ -56,15 +66,29 @@ export async function GET(req: Request) {
   const page=Math.max(1,Number(u.searchParams.get("page")||"1"));
   const collection=(u.searchParams.get("collection")||"all").replace(/[^a-zA-Z0-9_-]/g,"");
   const url=SOURCE+"/collections/"+collection+"?page="+page+"&sort_by=created-ascending";
-  const r=await fetch(url,{headers:{
-    accept:"text/html,application/xhtml+xml",
-    "user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154.0.0.0 Safari/537.36",
-    "accept-language":"ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7"
-  },cache:"no-store"});
+  let r: Response | null = null;
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await waitForSourceGap();
+    r = await fetch(url,{headers:{
+      accept:"text/html,application/xhtml+xml",
+      "user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154.0.0.0 Safari/537.36",
+      "accept-language":"ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7"
+    },cache:"no-store"});
+    if (r.ok) break;
+    lastStatus = r.status;
+    if (r.status !== 429 && r.status < 500) break;
+    if (attempt < 2) {
+      const retryAfter = Number(r.headers.get("retry-after") || "0");
+      const backoff = retryAfter > 0 ? Math.min(12000, retryAfter * 1000) : (4000 * (attempt + 1));
+      await new Promise(resolve => setTimeout(resolve, backoff));
+    }
+  }
+  if (!r) return NextResponse.json({error:"source_http",status:0},{status:502});
   const html=await r.text();
-  if(!r.ok) return NextResponse.json({error:"source_http",status:r.status},{status:502});
+  if(!r.ok) return NextResponse.json({error:"source_http",status:lastStatus || r.status},{status:502});
   const products=parse(html);
   return NextResponse.json({ok:true,page,collection,count:products.length,products},{headers:{"cache-control":"no-store"}});
 }
 
-// production env refresh marker
+// 429 backoff and source pacing enabled
