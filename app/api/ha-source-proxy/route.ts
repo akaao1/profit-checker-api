@@ -31,10 +31,14 @@ function parse(html: string) {
     const soldOut=/SOLD\s*OUT|在庫なし|売り切れ/i.test(block);
     const sm=block.match(/在庫\s*(\d+)\s*(?:個|点|枚)?/);
     const qty=sm?Number(sm[1]):null;
-    const title=block.replace(/SOLD\s*OUT/gi,"")
-      .replace(/販売価格[:：]\s*[¥￥]\s*[0-9,]+/g,"")
-      .replace(/在庫\s*(?:なし|\d+)\s*(?:個|点|枚)?/g,"")
-      .replace(/売り切れ/g,"").replace(/セール/g,"").replace(/数量/g,"").trim();
+    const body=block.replace(/^href=.*?>\s*/i,"").trim();
+    const cardMatch=body.match(/〈[0-9]+\/[0-9]+〉/);
+    const dashCardMatch=body.match(/〈-〉/);
+    let title="";
+    if(cardMatch || dashCardMatch){
+      const cut=body.search(/\s単価\s*\/\s*あたり/);
+      title=(cut>=0?body.slice(0,cut):body.slice(0,500)).trim();
+    }
     if(!title || !/[〈〉]/.test(title)) continue;
     out.push({id:cur.handle,handle:cur.handle,title,price,available:!soldOut&&(qty==null||qty>0),inventory_quantity:qty});
   }
