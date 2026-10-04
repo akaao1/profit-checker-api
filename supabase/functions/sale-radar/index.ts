@@ -37,7 +37,7 @@ function parseTitle(title: string) {
   const m = t.match(/^(?:〖|【)状態([A-D])([+-])?(?:〗|】)/);
   const condition_label = m ? m[1] + (m[2] ?? "") : "A";
   const card_number = (t.match(/〈([^〉]+)〉/) || [])[1] ?? null;
-  const set_code = (t.match(/\[([^\]]+)\]/) || [])[1] ?? null;
+  const set_code = (t.match(/〈[^〉]+〉\s*\[([^\]]+)\]/) || [])[1] ?? null;
   const rarity = (t.match(/\(([^)]+)\)/) || [])[1] ?? null;
   const name = t
     .replace(/^(?:〖|【)状態[A-D][+-]?(?:〗|】)/, "")
@@ -62,6 +62,12 @@ const isSingle = (p: any) => {
 };
 const errText = (e: any) => e?.message ? String(e.message) : JSON.stringify(e);
 
+async function proxySecret() {
+  const q = await supabase.rpc("get_ha_proxy_secret");
+  if (q.error || !q.data) throw new Error("HA proxy secret unavailable");
+  return String(q.data);
+}
+
 async function sourceConfig() {
   const q = await supabase.from("sale_sources").select("id,code,base_url").eq("code", "HA_SELL").single();
   if (q.error) throw q.error;
@@ -69,25 +75,104 @@ async function sourceConfig() {
   return q.data;
 }
 
+function parseCollectionProductsHtml(html: string) {
+  const out: any[] = [];
+  const seen = new Set<string>();
+  const links: { handle: string; pos: number }[] = [];
+  const re = /href=["'](?:https?:\/\/[^"']+)?\/products\/([^"'?#]+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const handle = decodeURIComponent(m[1]);
+    if (!handle || seen.has(handle)) continue;
+    seen.add(handle);
+    links.push({ handle, pos: m.index });
+  }
+  for (let i = 0; i < links.length; i++) {
+    const cur = links[i];
+    const end = links[i + 1]?.pos ?? Math.min(html.length, cur.pos + 20000);
+    const block = clean(html.slice(cur.pos, end));
+    const priceMatch = block.match(/販売価格[:：]\s*[¥￥]\s*([0-9,]+)/);
+    if (!priceMatch) continue;
+    const price = Number(priceMatch[1].replace(/,/g, ""));
+    if (!Number.isFinite(price)) continue;
+    const soldOut = /SOLD\s*OUT|在庫なし|売り切れ/i.test(block);
+    const stockMatch = block.match(/在庫\s*(\d+)\s*(?:個|点|枚)?/);
+    const qty = stockMatch ? Number(stockMatch[1]) : null;
+    const body = block.replace(/^href=.*?>\s*/i, "").trim();
+    const cardMatch = body.match(/〈[0-9]+\/[0-9]+〉/);
+    const dashCardMatch = body.match(/〈-〉/);
+    let title = "";
+    if (cardMatch || dashCardMatch) {
+      const cut = body.search(/\s単価\s*\/\s*あたり/);
+      title = (cut >= 0 ? body.slice(0, cut) : body.slice(0, 500)).trim();
+    }
+    if (!title || !/[〈〉]/.test(title)) continue;
+    out.push({
+      id: cur.handle,
+      handle: cur.handle,
+      title,
+      available: !soldOut && (qty == null || qty > 0),
+      variants: [{
+        id: cur.handle,
+        available: !soldOut && (qty == null || qty > 0),
+        price,
+        inventory_quantity: qty == null ? undefined : qty,
+      }],
+    });
+  }
+  return { products: out };
+}
+
 async function fetchPage(page: number, collection: string, baseUrl: string) {
-  const url = baseUrl.replace(/\/$/, "") + "/collections/" + collection +
-    "/products.json?limit=250&page=" + page;
+  const root = baseUrl.replace(/\/$/, "");
+  if (collection === "all") {
+    const secret = await proxySecret();
+    const proxy = "https://profit-checker-api.vercel.app/api/ha-source-proxy?page=" + page + "&collection=all";
+    const pr = await fetch(proxy, { headers: { accept: "application/json", "x-ha-proxy-secret": secret } });
+    if (pr.ok) return await pr.json();
+    if (pr.status === 401) throw new Error("HA proxy unauthorized");
+    throw new Error("HA proxy HTTP " + pr.status);
+    let lastStatus = 0;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+      try {
+        const r = await fetch(url, {
+          headers: {
+            accept: "text/html,application/xhtml+xml",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154.0.0.0 Safari/537.36",
+            "accept-language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
+          },
+          signal: controller.signal,
+        });
+        if (r.ok) return parseCollectionProductsHtml(await r.text());
+        lastStatus = r.status;
+        if (r.status !== 429 && r.status < 500) break;
+        if (attempt < 2) await new Promise(r2 => setTimeout(r2, 2000 + Math.floor(Math.random() * 2500)));
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    throw new Error("source HTML HTTP " + lastStatus + " page=" + page);
+  }
+
+  const url = root + "/collections/" + collection + "/products.json?limit=250&page=" + page + "&sort_by=created-ascending";
   let lastStatus = 0;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const r = await fetch(url, {
-      headers: {
-        accept: "application/json",
-        "user-agent": "Cross-Border-Seller-Radar/6.0",
-      },
-    });
-    if (r.ok) return await r.json();
-    lastStatus = r.status;
-    if (r.status !== 429 && r.status < 500) break;
-    const retryAfter = Number(r.headers.get("retry-after") ?? 0);
-    const retryMs = retryAfter > 0
-      ? Math.min(30000, retryAfter * 1000)
-      : 3000 + Math.floor(Math.random() * 5000);
-    await new Promise(r2 => setTimeout(r2, retryMs));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    try {
+      const r = await fetch(url, {
+        headers: { accept: "application/json", "user-agent": "Cross-Border-Seller-Radar/6.4" },
+        signal: controller.signal,
+      });
+      if (r.ok) return await r.json();
+      lastStatus = r.status;
+      if (r.status !== 429 && r.status < 500) break;
+      if (attempt < 2) await new Promise(r2 => setTimeout(r2, 2000 + Math.floor(Math.random() * 2500)));
+    } finally {
+      clearTimeout(timeout);
+    }
   }
   throw new Error("source HTTP " + lastStatus + " page=" + page);
 }
@@ -161,7 +246,7 @@ async function fetchExactStockQty(baseUrl: string, handle: string | null, fallba
 
 async function fetchCollectionStockMap(baseUrl: string, collection: string, page: number) {
   const root = baseUrl.replace(/\/$/, "");
-  const url = root + "/collections/" + collection + "?page=" + page;
+  const url = root + "/collections/" + collection + "?page=" + page + "&sort_by=created-ascending";
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const r = await fetch(url, {
@@ -235,6 +320,64 @@ async function enrichUnknownStock(rows: any[], baseUrl: string, limit = 50) {
   }
 }
 
+async function refreshStockBatch(limit = 5) {
+  const q = await supabase.from("sale_current_opportunities_cd_ha")
+    .select("sale_observation_id,canonical_name,card_number")
+    .limit(Math.min(20, Math.max(1, limit)));
+  if (q.error) throw q.error;
+  const ids = (q.data ?? []).map((x: any) => x.sale_observation_id).filter(Boolean);
+  if (!ids.length) return { candidates: 0, refreshed: 0, exact: 0 };
+  const obs = await supabase.from("sale_observations")
+    .select("id,external_product_key,card_number,stock_qty,in_stock,raw_payload")
+    .in("id", ids);
+  if (obs.error) throw obs.error;
+  const source = await sourceConfig();
+  const secret = await proxySecret();
+  let refreshed = 0, exact = 0;
+  const targets = (obs.data ?? []).slice(0, limit);
+  for (let i = 0; i < targets.length; i++) {
+    const row = targets[i];
+    const handle = row.raw_payload?.handle ? String(row.raw_payload.handle) : null;
+    let qty: number | null = null;
+    let sourceName: string | null = null;
+    const product = (q.data ?? []).find((x: any) => x.sale_observation_id === row.id);
+    if (row.card_number && product?.canonical_name) {
+      try {
+        const searchText = [product.canonical_name, row.card_number].filter(Boolean).join(" ");
+        const proxyUrl = "https://profit-checker-api.vercel.app/api/ha-source-proxy?search=" + encodeURIComponent(searchText) + "&card_number=" + encodeURIComponent(String(row.card_number));
+        const pr = await fetch(proxyUrl, { headers: { accept: "application/json", "x-ha-proxy-secret": secret } });
+        if (pr.ok) {
+          const pd = await pr.json();
+          const match = (pd.matches ?? []).find((x: any) => handle && String(x.handle) === handle);
+          if (match && Number.isInteger(Number(match.stock_qty)) && Number(match.stock_qty) >= 0) {
+            qty = Number(match.stock_qty);
+            sourceName = "search_html";
+          }
+        }
+      } catch {}
+    }
+    if (qty == null) {
+      const r = await fetchExactStockQty(source.base_url, handle, row.in_stock);
+      qty = r.qty;
+      sourceName = r.source;
+    }
+    if (qty != null && row.external_product_key) {
+      const patch = {
+        stock_qty: qty,
+        stock_qty_source: sourceName,
+        stock_qty_observed_at: new Date().toISOString(),
+        raw_payload: { ...(row.raw_payload ?? {}), stock_qty_source: sourceName, stock_qty_exact: sourceName !== "availability" },
+      };
+      const u = await supabase.from("sale_observations").update(patch).eq("id", row.id);
+      if (u.error) throw u.error;
+      refreshed++;
+      if (sourceName !== "availability") exact++;
+    }
+    if (i + 1 < targets.length) await new Promise(r => setTimeout(r, 900));
+  }
+  return { candidates: obs.data?.length ?? 0, refreshed, exact };
+}
+
 async function run(b: any) {
   const source = await sourceConfig();
   const pageStart = Math.max(1, Number(b.page_start ?? 1));
@@ -248,31 +391,35 @@ async function run(b: any) {
   let pages = 0, seen = 0, written = 0, opps = 0, singles = 0, stage = "init";
   try {
     const all: any[] = [];
+    const allListings: any[] = [];
     for (let p = pageStart; p < pageStart + pageCount; p++) {
       const d = await fetchPage(p, collection, source.base_url);
-      const stockMap = await fetchCollectionStockMap(source.base_url, collection, p);
-      for (const product of (Array.isArray(d?.products) ? d.products : [])) {
-        const handle = product?.handle ? String(product.handle) : null;
-        const stock = handle ? stockMap.get(handle) : null;
-        if (stock) {
-          product.__collection_stock_qty = stock.qty;
-          product.__collection_stock_source = stock.source;
+      if (collection !== "all") {
+        const stockMap = await fetchCollectionStockMap(source.base_url, collection, p);
+        for (const product of (Array.isArray(d?.products) ? d.products : [])) {
+          const handle = product?.handle ? String(product.handle) : null;
+          const stock = handle ? stockMap.get(handle) : null;
+          if (stock) {
+            product.__collection_stock_qty = stock.qty;
+            product.__collection_stock_source = stock.source;
+          }
         }
       }
       if (p < pageStart + pageCount - 1) {
-        await new Promise(r => setTimeout(r, 900 + Math.floor(Math.random() * 1100)));
+        await new Promise(r => setTimeout(r, 1500 + Math.floor(Math.random() * 1500)));
       }
       const ps = Array.isArray(d?.products) ? d.products : [];
       pages++;
       if (!ps.length) break;
       for (const p0 of ps) {
         seen++;
+        allListings.push(p0);
         if (isSingle(p0)) {
           all.push(p0);
           singles++;
         }
       }
-      if (ps.length < 250) break;
+      if (collection !== "all" && ps.length < 250) break;
     }
 
     stage = "load_products";
@@ -308,8 +455,13 @@ async function run(b: any) {
       const v = vs[0] ?? {};
       const price = Math.round(Number(v.price ?? p.price ?? 0));
       const available = vs.some((z: any) => z.available === true) || p.available === true;
-      const qty = vs.reduce((n: number, z: any) =>
-        n + (Number.isFinite(Number(z.inventory_quantity)) ? Number(z.inventory_quantity) : 0), 0);
+      const exactVariantQty = vs.length > 0 && vs.every((z: any) =>
+        z.inventory_quantity !== undefined && z.inventory_quantity !== null &&
+        Number.isInteger(Number(z.inventory_quantity)) && Number(z.inventory_quantity) >= 0);
+      const qty = exactVariantQty
+        ? vs.reduce((n: number, z: any) => n + Number(z.inventory_quantity), 0)
+        : 0;
+      const exactQty = p.__collection_stock_qty != null || exactVariantQty;
       const hasCardNumber = /^\d+\/\d+$/.test(String(x.card_number ?? ""));
       const sourceCardNumber = clean(x.card_number);
       const baseCandidates = sourceCardNumber
@@ -353,9 +505,9 @@ async function run(b: any) {
         variant_key: variantKey(x.name),
         variant_base_name: variantBase(x.name),
         sale_price_jpy: price,
-        stock_qty: p.__collection_stock_qty != null ? Number(p.__collection_stock_qty) : (Number.isFinite(qty) && qty > 0 ? qty : (available ? null : 0)),
-        stock_qty_source: p.__collection_stock_qty != null ? String(p.__collection_stock_source ?? "collection_html") : (Number.isFinite(qty) && qty > 0 ? "source_json" : (available ? null : "availability")),
-        stock_qty_observed_at: p.__collection_stock_qty != null ? new Date().toISOString() : null,
+        stock_qty: p.__collection_stock_qty != null ? Number(p.__collection_stock_qty) : (exactVariantQty ? qty : (available ? null : 0)),
+        stock_qty_source: p.__collection_stock_qty != null ? String(p.__collection_stock_source ?? "collection_html") : (exactVariantQty ? "source_json" : (available ? null : "availability")),
+        stock_qty_observed_at: (p.__collection_stock_qty != null || exactQty || !available) ? new Date().toISOString() : null,
         in_stock: available,
         source_url: source.base_url.replace(/\/$/, "") + "/products/" + (p.handle ?? p.id),
         observed_at: new Date().toISOString(),
@@ -363,8 +515,8 @@ async function run(b: any) {
           source_id: p.id,
           handle: p.handle,
           collection,
-          stock_qty_source: p.__collection_stock_qty != null ? String(p.__collection_stock_source ?? "collection_html") : (Number.isFinite(qty) && qty > 0 ? "source_json" : (available ? null : "availability")),
-          stock_qty_exact: p.__collection_stock_qty != null || (Number.isFinite(qty) && qty > 0) || !available,
+          stock_qty_source: p.__collection_stock_qty != null ? String(p.__collection_stock_source ?? "collection_html") : (exactVariantQty ? "source_json" : (available ? null : "availability")),
+          stock_qty_exact: exactQty,
           variants: vs.map((z: any) => ({
             id: z.id, available: z.available, price: z.price,
             inventory_quantity: z.inventory_quantity, sku: z.sku,
@@ -374,18 +526,20 @@ async function run(b: any) {
     }
 
     stage = "enrich_stock";
-    await enrichUnknownStock(rows, source.base_url, 50);
+    if (collection !== "all") {
+      await enrichUnknownStock(rows, source.base_url, 5);
+    }
 
     stage = "insert_observations";
-    for (let i = 0; i < rows.length; i += 25) {
+    for (let i = 0; i < rows.length; i += 100) {
       const ins = await supabase.from("sale_observations").insert(rows.slice(i, i + 100));
       if (ins.error) throw new Error("sale observation write: " + errText(ins.error));
       written += Math.min(100, rows.length - i);
     }
 
     const stagingCycleId = String(b.cycle_id ?? "");
-    if (stagingCycleId && rows.length) {
-      const keys = [...new Set(rows.map(x => x.external_product_key).filter(Boolean))];
+    if (stagingCycleId && allListings.length) {
+      const keys = [...new Set(allListings.map((p: any) => String(p?.id ?? p?.handle ?? p?.title ?? "")).filter(Boolean))];
       for (let i = 0; i < keys.length; i += 500) {
         const stg = await supabase.rpc("stage_sale_current_keys", {
           p_sale_source_id: source.id,
@@ -426,6 +580,27 @@ Deno.serve(async (req) => {
       : await req.json().catch(() => ({}));
 
     if (b.action === "scheduled") {
+      // Never overlap two collection runs. A network call can outlive the scheduler
+      // request when the upstream returns a long Retry-After.
+      const runningQ = await supabase.from("sale_fetch_runs")
+        .select("id,started_at")
+        .eq("status","RUNNING")
+        .order("started_at",{ascending:false})
+        .limit(1)
+        .maybeSingle();
+      if (runningQ.error) throw runningQ.error;
+      if (runningQ.data) {
+        const ageMs = Date.now() - new Date(runningQ.data.started_at).getTime();
+        if (ageMs < 10 * 60 * 1000) {
+          return new Response(JSON.stringify({ ok:true, skipped:true, reason:"run_in_progress" }), { headers: cors });
+        }
+        await supabase.from("sale_fetch_runs").update({
+          finished_at:new Date().toISOString(),
+          status:"FAILED",
+          error_count:1,
+          error_message:"stale RUNNING run recovered by scheduler"
+        }).eq("id",runningQ.data.id).eq("status","RUNNING");
+      }
       const claim = await supabase.rpc("claim_sale_collection_slot", {
         p_kind: "normal", p_min_minutes: 8, p_max_minutes: 22,
       });
@@ -464,6 +639,9 @@ Deno.serve(async (req) => {
       }
       const upd = await supabase.from("sale_collection_state").update(patch).eq("id", true);
       if (upd.error) throw upd.error;
+
+      let stock_refresh = { candidates: 0, refreshed: 0, exact: 0 };
+      try { stock_refresh = await refreshStockBatch(5); } catch (_) {}
 
       const damagedClaim = await supabase.rpc("claim_sale_collection_slot", {
         p_kind: "damaged", p_min_minutes: 25, p_max_minutes: 55,
@@ -504,20 +682,39 @@ Deno.serve(async (req) => {
 
     if (b.action === "refresh_opportunity_stock") {
       const q = await supabase.from("sale_current_opportunities_cd_ha")
-        .select("sale_observation_id")
+        .select("sale_observation_id,canonical_name,card_number")
         .limit(200);
       if (q.error) throw q.error;
       const ids = (q.data ?? []).map((x: any) => x.sale_observation_id).filter(Boolean);
       const obs = ids.length
-        ? await supabase.from("sale_observations").select("id,external_product_key,stock_qty,stock_qty_source,in_stock,raw_payload").in("id", ids)
+        ? await supabase.from("sale_observations").select("id,external_product_key,card_number,stock_qty,stock_qty_source,in_stock,raw_payload").in("id", ids)
         : { data: [], error: null };
       if (obs.error) throw obs.error;
       const source = await sourceConfig();
-      const results = await Promise.all((obs.data ?? []).map(async (row: any) => {
+      const proxySecretValue = await proxySecret();
+      const results: any[] = [];
+      for (const row of (obs.data ?? [])) {
         const handle = row.raw_payload?.handle ? String(row.raw_payload.handle) : null;
-        const r = await fetchExactStockQty(source.base_url, handle, row.in_stock);
-        return { row, result: r };
-      }));
+        let result = { qty: row.in_stock === false ? 0 : null, source: row.in_stock === false ? "availability" : null as string | null };
+        if (row.card_number) {
+          try {
+            const searchText = [row.canonical_name, row.card_number].filter(Boolean).join(" ");
+            const proxyUrl = "https://profit-checker-api.vercel.app/api/ha-source-proxy?search=" + encodeURIComponent(searchText) + "&card_number=" + encodeURIComponent(String(row.card_number));
+            const pr = await fetch(proxyUrl, { headers: { accept: "application/json", "x-ha-proxy-secret": proxySecretValue } });
+            if (pr.ok) {
+              const pd = await pr.json();
+              const match = (pd.matches ?? []).find((x: any) => handle && String(x.handle) === handle);
+              if (match && Number.isInteger(Number(match.stock_qty)) && Number(match.stock_qty) >= 0) {
+                result = { qty: Number(match.stock_qty), source: "search_html" };
+              }
+            }
+          } catch {}
+        }
+        if (result.qty == null) {
+          result = await fetchExactStockQty(source.base_url, handle, row.in_stock);
+        }
+        results.push({ row, result });
+      }
       const updates = results.filter(x => x.row.external_product_key && x.result.qty != null);
       await Promise.all(updates.map(async ({ row, result }) => {
         const patch = {
