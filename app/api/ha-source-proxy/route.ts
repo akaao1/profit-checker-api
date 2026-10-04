@@ -37,7 +37,10 @@ function parse(html: string) {
     let title="";
     if(cardMatch || dashCardMatch){
       const cut=body.search(/\s単価\s*\/\s*あたり/);
-      title=(cut>=0?body.slice(0,cut):body.slice(0,500)).trim();
+      title=(cut>=0?body.slice(0,cut):body.slice(0,500)).trim()
+        .replace(/^SOLD\s*OUT\s+/i,"")
+        .replace(/\s*販売価格[:：].*$/,"")
+        .trim();
     }
     if(!title || !/[〈〉]/.test(title)) continue;
     out.push({id:cur.handle,handle:cur.handle,title,price,available:!soldOut&&(qty==null||qty>0),inventory_quantity:qty});
