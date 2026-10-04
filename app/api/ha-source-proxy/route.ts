@@ -65,6 +65,40 @@ export async function GET(req: Request) {
   const u=new URL(req.url);
   const page=Math.max(1,Number(u.searchParams.get("page")||"1"));
   const collection=(u.searchParams.get("collection")||"all").replace(/[^a-zA-Z0-9_-]/g,"");
+  const searchRaw=u.searchParams.get("search");
+  if (searchRaw) {
+    const query=decodeURIComponent(searchRaw).slice(0,80);
+    const searchUrl=SOURCE+"/search?q="+encodeURIComponent(query)+"&type=product";
+    for (let attempt=0; attempt<3; attempt++) {
+      await waitForSourceGap();
+      const sr=await fetch(searchUrl,{headers:{accept:"text/html,application/xhtml+xml","user-agent":"Cross-Border-Seller-Radar/6.5","accept-language":"ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7"},cache:"no-store"});
+      if (sr.ok) {
+        const html=await sr.text();
+        const targetCard=(u.searchParams.get("card_number")||"").trim();
+        const links=[...html.matchAll(/href=["'](?:https?:\/\/[^"']+)?\/products\/([^"'?#]+)["']/gi)].map(m=>({handle:decodeURIComponent(m[1]),pos:m.index??0}));
+        const seen=new Set<string>(); const matches:any[]=[];
+        for(let i=0;i<links.length;i++){
+          const cur=links[i]; if(seen.has(cur.handle)) continue; seen.add(cur.handle);
+          const end=links[i+1]?.pos ?? Math.min(html.length,cur.pos+20000);
+          const block=html.slice(cur.pos,end);
+          if(targetCard && !block.includes("〈"+targetCard+"〉")) continue;
+          const soldOut=/SOLD\s*OUT|在庫なし|売り切れ/i.test(block);
+          const sm=block.match(/在庫\s*(\d+)\s*(?:個|点|枚)?/);
+          const qty=sm?Number(sm[1]):(soldOut?0:null);
+          if(qty!=null && Number.isInteger(qty) && qty>=0) matches.push({handle:cur.handle,stock_qty:qty,source:"search_html"});
+        }
+        return NextResponse.json({ok:true,query,targetCard,matches},{headers:{"cache-control":"no-store"}});
+      }
+      if(sr.status!==429 && sr.status<500) break;
+      if(attempt<2){
+        const retryAfter=Number(sr.headers.get("retry-after")||"0");
+        const backoff=retryAfter>0?Math.min(12000,retryAfter*1000):(4000*(attempt+1));
+        await new Promise(resolve=>setTimeout(resolve,backoff));
+      }
+    }
+    return NextResponse.json({ok:false,error:"search_source_unavailable"},{status:502});
+  }
+
   const handleRaw=u.searchParams.get("handle");
   if (handleRaw) {
     const handle=decodeURIComponent(handleRaw).replace(/[^a-zA-Z0-9_-]/g,"");
