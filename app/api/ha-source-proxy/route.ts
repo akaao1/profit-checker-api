@@ -65,6 +65,32 @@ export async function GET(req: Request) {
   const u=new URL(req.url);
   const page=Math.max(1,Number(u.searchParams.get("page")||"1"));
   const collection=(u.searchParams.get("collection")||"all").replace(/[^a-zA-Z0-9_-]/g,"");
+  const handleRaw=u.searchParams.get("handle");
+  if (handleRaw) {
+    const handle=decodeURIComponent(handleRaw).replace(/[^a-zA-Z0-9_-]/g,"");
+    const productUrl=SOURCE+"/products/"+handle+".json";
+    for (let attempt=0; attempt<3; attempt++) {
+      await waitForSourceGap();
+      const jr=await fetch(productUrl,{headers:{accept:"application/json","user-agent":"Cross-Border-Seller-Radar/6.5","accept-language":"ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7"},cache:"no-store"});
+      if (jr.ok) {
+        const jd=await jr.json();
+        const variants=Array.isArray(jd?.product?.variants)?jd.product.variants:[];
+        const tracked=variants.filter((v:any)=>v?.inventory_management);
+        const quantities=tracked.map((v:any)=>Number(v.inventory_quantity));
+        const exact=tracked.length===variants.length && tracked.length>0 && quantities.every((n:number)=>Number.isInteger(n)&&n>=0);
+        if (exact) return NextResponse.json({ok:true,handle,stock_qty:quantities.reduce((a:number,n:number)=>a+n,0),source:"product_json",variants},{headers:{"cache-control":"no-store"}});
+        return NextResponse.json({ok:true,handle,stock_qty:null,source:"product_json_unavailable",variants},{headers:{"cache-control":"no-store"}});
+      }
+      if (jr.status!==429 && jr.status<500) break;
+      if (attempt<2) {
+        const retryAfter=Number(jr.headers.get("retry-after")||"0");
+        const backoff=retryAfter>0?Math.min(12000,retryAfter*1000):(4000*(attempt+1));
+        await new Promise(resolve=>setTimeout(resolve,backoff));
+      }
+    }
+    return NextResponse.json({ok:false,handle,error:"product_source_unavailable"},{status:502});
+  }
+
   const jsonUrl=SOURCE+"/collections/"+collection+"/products.json?limit=250&page="+page+"&sort_by=created-ascending";
   for (let attempt=0; attempt<3; attempt++) {
     await waitForSourceGap();
