@@ -59,3 +59,5 @@ export async function GET(req: Request) {
   const products=parse(html);
   return NextResponse.json({ok:true,page,collection,count:products.length,products},{headers:{"cache-control":"no-store"}});
 }
+
+// production env refresh marker
