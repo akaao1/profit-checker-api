@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 const url = process.env.SUPABASE_URL || "https://whkxkdxpndajqkkqmrcu.supabase.co";
 const key = process.env.SUPABASE_PUBLISHABLE_KEY || "";
+// Uses the publishable key only; privileged database access is intentionally not exposed here.
 
 export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get("id") ?? "";
