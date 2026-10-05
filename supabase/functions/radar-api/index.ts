@@ -7,12 +7,12 @@ async function buildFallbackSpreadRankings(aliasMap:Map<string,string>,maxRows:n
  const cutoff=new Date(Date.now()-24*60*60*1000).toISOString();
  const [cdResult,listingResult]=await Promise.all([
   supabase.from("cd_current_stable_prices").select("product_id,price_jpy,observed_at").gt("price_jpy",0).order("observed_at",{ascending:false}).limit(10000),
-  supabase.from("source_current_listings").select("source_product_id,checked_at").eq("market_source_id",HA).gte("checked_at",cutoff).limit(10000)
+  supabase.from("sale_current_listings").select("external_product_key,checked_at").eq("sale_source_id","75d222f1-4e7c-48b2-95ff-8de0f885ebd7").limit(10000)
  ]);
  if(cdResult.error)throw cdResult.error;
  if(listingResult.error)throw listingResult.error;
  const listings=listingResult.data??[];
- const listingIds=new Set(listings.map((x:any)=>String(x.source_product_id)));
+ const listingIds=new Set(listings.map((x:any)=>String(x.external_product_key)));
  const cdByCanonical=new Map<string,any>();
  for(const row of cdResult.data??[]){
   const id=aliasMap.get(row.product_id)??row.product_id;
@@ -26,23 +26,25 @@ async function buildFallbackSpreadRankings(aliasMap:Map<string,string>,maxRows:n
   if(idsByCanonical.has(canonical))idsByCanonical.get(canonical)!.add(alias);
  }
  const relevantIds=[...new Set([...idsByCanonical.values()].flatMap(x=>[...x]))];
- const currentListingIds=new Set(listings.map((x:any)=>String(x.source_product_id)));
+ const currentListingIds=new Set(listings.map((x:any)=>String(x.external_product_key)));
  const idBatches:string[][]=[];
  for(let offset=0;offset<relevantIds.length;offset+=100)idBatches.push(relevantIds.slice(offset,offset+100));
- const haPages=await Promise.all(idBatches.map(ids=>supabase.from("price_observations")
-  .select("id,product_id,price_jpy,observed_at,created_at,raw_payload")
-  .eq("market_source_id",HA).in("product_id",ids).gte("observed_at",cutoff).gt("price_jpy",0)
+ const haPages=await Promise.all(idBatches.map(ids=>supabase.from("sale_observations")
+  .select("id,product_id,sale_price_jpy,observed_at,created_at,external_product_key,condition_label,in_stock")
+  .eq("sale_source_id","75d222f1-4e7c-48b2-95ff-8de0f885ebd7").in("product_id",ids).gte("observed_at",cutoff).gt("sale_price_jpy",0)
   .order("observed_at",{ascending:false}).order("created_at",{ascending:false}).limit(1000)));
  for(const page of haPages){
   if(page.error)throw page.error;
   for(const row of page.data??[]){
-   const sourceProductId=String(row.raw_payload?.source_product_id??"");
+   const sourceProductId=String(row.external_product_key??"");
    if(!sourceProductId||!currentListingIds.has(sourceProductId))continue;
    const id=aliasMap.get(row.product_id)??row.product_id;
    const old=haByCanonical.get(id);
-   if(!old||Date.parse(row.observed_at)>Date.parse(old.observed_at)||
-      (row.observed_at===old.observed_at&&Date.parse(row.created_at)>Date.parse(old.created_at))){
-    haByCanonical.set(id,{...row,canonical_product_id:id});
+   if(!old||
+      (String(row.condition_label??"").toUpperCase()==="A" && String(old.condition_label??"").toUpperCase()!=="A") ||
+      (String(row.condition_label??"").toUpperCase()===String(old.condition_label??"").toUpperCase() && row.in_stock && !old.in_stock) ||
+      (String(row.condition_label??"").toUpperCase()===String(old.condition_label??"").toUpperCase() && row.in_stock===old.in_stock && (Date.parse(row.observed_at)>Date.parse(old.observed_at) || (row.observed_at===old.observed_at&&Date.parse(row.created_at)>Date.parse(old.created_at))))){
+    haByCanonical.set(id,{...row,price_jpy:row.sale_price_jpy,canonical_product_id:id});
    }
   }
  }
@@ -80,8 +82,14 @@ Deno.serve(async(req)=>{
  try{
   const u=new URL(req.url),q=(u.searchParams.get("q")??"").trim(),requestedProductId=(u.searchParams.get("product_id")??"").trim(),cardName=(u.searchParams.get("card_name")??"").trim(),cardNumber=(u.searchParams.get("card_number")??"").trim();
   const limit=Math.min(Number(u.searchParams.get("limit")??30)||30,100),days=Math.min(730,Math.max(7,Number(u.searchParams.get("days")??90))),history=u.searchParams.get("history")==="1",allChanges=u.searchParams.get("all_changes")==="1",allSpreads=u.searchParams.get("all_spreads")==="1",onlyChanges=u.searchParams.get("only")==="changes";
-  const aliasRows=await supabase.from("cd_ha_set_name_alias_map").select("alias_product_id,canonical_product_id");if(aliasRows.error)throw aliasRows.error;
-  const aliasMap=new Map((aliasRows.data??[]).map((x:any)=>[x.alias_product_id,x.canonical_product_id]));const aliasIds=new Set(aliasMap.keys());let productId=requestedProductId;if(productId&&aliasMap.has(productId))productId=aliasMap.get(productId)!;
+  const aliasMap=new Map<string,string>();
+  for(let offset=0;offset<10000;offset+=1000){
+   const aliasPage=await supabase.from("cd_ha_set_name_alias_map").select("alias_product_id,canonical_product_id").range(offset,offset+999);
+   if(aliasPage.error)throw aliasPage.error;
+   for(const row of aliasPage.data??[])aliasMap.set(row.alias_product_id,row.canonical_product_id);
+   if((aliasPage.data??[]).length<1000)break;
+  }
+  const aliasIds=new Set(aliasMap.keys());let productId=requestedProductId;if(productId&&aliasMap.has(productId))productId=aliasMap.get(productId)!;
   if(productId||cardName||cardNumber||q){
    let searchQuery=supabase.from("market_products").select("id,canonical_name,set_name,card_number,rarity,variant_key,variant_base_name");
    if(productId)searchQuery=searchQuery.eq("id",productId);
@@ -96,6 +104,31 @@ Deno.serve(async(req)=>{
    const crm=new Map((current.data??[]).filter((x:any)=>x.market_source_id===CD).map((x:any)=>[x.product_id,x]));
    const ham=new Map((current.data??[]).filter((x:any)=>x.market_source_id===HA).map((x:any)=>[x.product_id,x]));
    const prices=rows.map((x:any)=>({product_id:x.id,canonical_name:x.canonical_name,set_name:x.set_name,card_number:x.card_number,rarity:x.rarity,variant_key:x.variant_key??"NORMAL",variant_base_name:x.variant_base_name??x.canonical_name,cd_latest_price_jpy:crm.get(x.id)?.price_jpy??null,cd_latest_observed_at:crm.get(x.id)?.observed_at??null,ha_latest_price_jpy:ham.get(x.id)?.price_jpy??null,ha_latest_observed_at:ham.get(x.id)?.observed_at??null}));
+   const displayRows:any[]=[];
+   const displayPrices:any[]=[];
+   const displayGroups=new Map<string,number[]>();
+   for(let i=0;i<rows.length;i++){
+    const x=rows[i];
+    const key=[x.canonical_name,x.set_name,x.card_number,x.rarity,x.variant_key??"NORMAL",x.variant_base_name??x.canonical_name]
+      .map((v:any)=>String(v??"").normalize("NFKC").toLowerCase().replace(/[ \\u3000]+/g," ").trim()).join("|");
+    const group=displayGroups.get(key)??[];
+    group.push(i);displayGroups.set(key,group);
+   }
+   for(const indices of displayGroups.values()){
+    const signatures=indices.map(i=>String(prices[i].cd_latest_price_jpy??"null")+"|"+String(prices[i].ha_latest_price_jpy??"null"));
+    if(indices.length===1||new Set(signatures).size>1){
+     for(const i of indices){displayRows.push(rows[i]);displayPrices.push(prices[i]);}
+     continue;
+    }
+    const best=indices.reduce((a,b)=>{
+     const score=(i:number)=>{
+      const p=prices[i];
+      return Math.max(p.cd_latest_observed_at?Date.parse(p.cd_latest_observed_at):0,p.ha_latest_observed_at?Date.parse(p.ha_latest_observed_at):0);
+     };
+     return score(b)>score(a)?b:a;
+    },indices[0]);
+    displayRows.push(rows[best]);displayPrices.push(prices[best]);
+   }
    let historyRows:any[]=[];
    if(history){
     if(productId){
@@ -104,7 +137,7 @@ Deno.serve(async(req)=>{
      historyRows=(h.data??[]).map((r:any)=>({product_id:r.product_id,canonical_name:meta?.canonical_name??null,set_name:meta?.set_name??null,card_number:meta?.card_number??null,rarity:meta?.rarity??null,variant_key:meta?.variant_key??"NORMAL",variant_base_name:meta?.variant_base_name??meta?.canonical_name??null,source_id:r.market_source_id,source_name:r.market_source_id===CD?"CD":"HA",observed_day:r.observed_at.slice(0,10),price_jpy:r.price_jpy,observed_at:r.observed_at}));
     }else{const h=await supabase.rpc("search_price_history",{p_query:cardNumber||cardName||q,p_days:days,p_limit:limit});if(h.error)throw h.error;historyRows=(h.data??[]).map((r:any)=>({...r,source_name:r.source_id===CD?"CD":r.source_id===HA?"HA":r.source_name}));}
    }
-   return new Response(JSON.stringify({ok:true,generated_at:new Date().toISOString(),sources:[],prices,search:rows,history:historyRows,history_days:days,change_rankings:{CD:[],HA:[]},spread_rankings:{CD:[],HA:[]},collection_stats_24h:[]}),{status:200,headers:cors});
+   return new Response(JSON.stringify({ok:true,generated_at:new Date().toISOString(),sources:[],prices:displayPrices,search:displayRows,history:historyRows,history_days:days,change_rankings:{CD:[],HA:[]},spread_rankings:{CD:[],HA:[]},collection_stats_24h:[]}),{status:200,headers:cors});
   }
   const warnings:any[]=[];
   const changeRankings=await supabase.rpc("get_price_change_rankings",{p_limit:allChanges?10000:Math.min(limit,50)});
