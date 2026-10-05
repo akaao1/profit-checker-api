@@ -4,52 +4,22 @@ const supabase=createClient(Deno.env.get("SUPABASE_URL")!,Deno.env.get("SUPABASE
 const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"content-type","Content-Type":"application/json; charset=utf-8"};
 const CD="6147f366-d44f-40ce-a364-fdcdcb9dbf29",HA="7d8d8aaf-a197-4615-bf43-ecae1f62e0c2";
 async function buildFallbackSpreadRankings(aliasMap:Map<string,string>,maxRows:number){
- const cutoff=new Date(Date.now()-24*60*60*1000).toISOString();
- const [cdResult,listingResult]=await Promise.all([
+ const [cdResult,haResult]=await Promise.all([
   supabase.from("cd_current_stable_prices").select("product_id,price_jpy,observed_at").gt("price_jpy",0).order("observed_at",{ascending:false}).limit(10000),
-  supabase.from("sale_current_listings").select("external_product_key,checked_at").eq("sale_source_id","75d222f1-4e7c-48b2-95ff-8de0f885ebd7").limit(10000)
+  supabase.from("ha_current_stable_buy_prices").select("product_id,price_jpy,observed_at").gt("price_jpy",0).order("observed_at",{ascending:false}).limit(10000)
  ]);
  if(cdResult.error)throw cdResult.error;
- if(listingResult.error)throw listingResult.error;
- const listings=listingResult.data??[];
- const listingIds=new Set(listings.map((x:any)=>String(x.external_product_key)));
- const cdByCanonical=new Map<string,any>();
+ if(haResult.error)throw haResult.error;
+ const cdByCanonical=new Map<string,any>(),haByCanonical=new Map<string,any>();
  for(const row of cdResult.data??[]){
-  const id=aliasMap.get(row.product_id)??row.product_id;
-  const old=cdByCanonical.get(id);
+  const id=aliasMap.get(row.product_id)??row.product_id,old=cdByCanonical.get(id);
   if(!old||Date.parse(row.observed_at)>Date.parse(old.observed_at))cdByCanonical.set(id,{...row,canonical_product_id:id});
  }
- const haByCanonical=new Map<string,any>();
- const idsByCanonical=new Map<string,Set<string>>();
- for(const id of cdByCanonical.keys())idsByCanonical.set(id,new Set([id]));
- for(const [alias,canonical] of aliasMap.entries()){
-  if(idsByCanonical.has(canonical))idsByCanonical.get(canonical)!.add(alias);
+ for(const row of haResult.data??[]){
+  const id=aliasMap.get(row.product_id)??row.product_id,old=haByCanonical.get(id);
+  if(!old||Date.parse(row.observed_at)>Date.parse(old.observed_at))haByCanonical.set(id,{...row,canonical_product_id:id});
  }
- const relevantIds=[...new Set([...idsByCanonical.values()].flatMap(x=>[...x]))];
- const currentListingIds=new Set(listings.map((x:any)=>String(x.external_product_key)));
- const idBatches:string[][]=[];
- for(let offset=0;offset<relevantIds.length;offset+=100)idBatches.push(relevantIds.slice(offset,offset+100));
- const haPages=await Promise.all(idBatches.map(ids=>supabase.from("sale_observations")
-  .select("id,product_id,sale_price_jpy,observed_at,created_at,external_product_key,condition_label,in_stock")
-  .eq("sale_source_id","75d222f1-4e7c-48b2-95ff-8de0f885ebd7").in("product_id",ids).gte("observed_at",cutoff).gt("sale_price_jpy",0)
-  .order("observed_at",{ascending:false}).order("created_at",{ascending:false}).limit(1000)));
- for(const page of haPages){
-  if(page.error)throw page.error;
-  for(const row of page.data??[]){
-   const sourceProductId=String(row.external_product_key??"");
-   if(!sourceProductId||!currentListingIds.has(sourceProductId))continue;
-   const id=aliasMap.get(row.product_id)??row.product_id;
-   const old=haByCanonical.get(id);
-   if(!old||
-      (String(row.condition_label??"").toUpperCase()==="A" && String(old.condition_label??"").toUpperCase()!=="A") ||
-      (String(row.condition_label??"").toUpperCase()===String(old.condition_label??"").toUpperCase() && row.in_stock && !old.in_stock) ||
-      (String(row.condition_label??"").toUpperCase()===String(old.condition_label??"").toUpperCase() && row.in_stock===old.in_stock && (Date.parse(row.observed_at)>Date.parse(old.observed_at) || (row.observed_at===old.observed_at&&Date.parse(row.created_at)>Date.parse(old.created_at))))){
-    haByCanonical.set(id,{...row,price_jpy:row.sale_price_jpy,canonical_product_id:id});
-   }
-  }
- }
- const pairIds:string[]=[];
- for(const id of cdByCanonical.keys())if(haByCanonical.has(id))pairIds.push(id);
+ const pairIds=[...cdByCanonical.keys()].filter(id=>haByCanonical.has(id));
  const metadata=new Map<string,any>();
  for(let offset=0;offset<pairIds.length;offset+=500){
   const batch=await supabase.from("market_products").select("id,canonical_name,set_name,card_number,rarity").in("id",pairIds.slice(offset,offset+500));
@@ -60,19 +30,11 @@ async function buildFallbackSpreadRankings(aliasMap:Map<string,string>,maxRows:n
  for(const id of pairIds){
   const c=cdByCanonical.get(id),h=haByCanonical.get(id),m=metadata.get(id);
   if(!c||!h||!m||Number(c.price_jpy)<=0||Number(h.price_jpy)<=0||Number(c.price_jpy)===Number(h.price_jpy))continue;
-  const diff=Number(h.price_jpy)-Number(c.price_jpy);
-  const channel=diff>0?"HA":"CD";
-  buckets[channel].push({
-   product_id:id,canonical_name:m.canonical_name,set_name:m.set_name,card_number:m.card_number,rarity:m.rarity,
-   cd_price_jpy:Number(c.price_jpy),ha_price_jpy:Number(h.price_jpy),difference_jpy:diff,
-   difference_percent:Number((Math.abs(diff)/Math.min(Number(c.price_jpy),Number(h.price_jpy))*100).toFixed(2)),
-   cd_observed_at:c.observed_at,ha_observed_at:h.observed_at,
-   cd_stale:Date.parse(c.observed_at)<Date.now()-60*60*1000,
-   ha_stale:Date.parse(h.observed_at)<Date.now()-60*60*1000
-  });
+  const diff=Number(h.price_jpy)-Number(c.price_jpy),channel=diff>0?"HA":"CD";
+  buckets[channel].push({product_id:id,canonical_name:m.canonical_name,set_name:m.set_name,card_number:m.card_number,rarity:m.rarity,cd_price_jpy:Number(c.price_jpy),ha_price_jpy:Number(h.price_jpy),difference_jpy:diff,difference_percent:Number((Math.abs(diff)/Math.min(Number(c.price_jpy),Number(h.price_jpy))*100).toFixed(2)),cd_observed_at:c.observed_at,ha_observed_at:h.observed_at,cd_stale:Date.parse(c.observed_at)<Date.now()-60*60*1000,ha_stale:Date.parse(h.observed_at)<Date.now()-60*60*1000});
  }
  for(const channel of ["HA","CD"]){
-  buckets[channel].sort((a:any,b:any)=>Math.abs(b.difference_jpy)-Math.abs(a.difference_jpy)||b.difference_percent-a.difference_percent||Date.parse(b.ha_observed_at)-Date.parse(a.ha_observed_at)||a.product_id.localeCompare(b.product_id));
+  buckets[channel].sort((a:any,b:any)=>Math.abs(b.difference_jpy)-Math.abs(a.difference_jpy)||b.difference_percent-a.difference_percent||Math.max(Date.parse(b.cd_observed_at),Date.parse(b.ha_observed_at))-Math.max(Date.parse(a.cd_observed_at),Date.parse(a.ha_observed_at))||a.product_id.localeCompare(b.product_id));
   buckets[channel]=buckets[channel].slice(0,maxRows).map((row:any,index:number)=>({...row,rank:index+1}));
  }
  return buckets;
