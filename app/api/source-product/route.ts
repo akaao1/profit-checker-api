@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 const url = process.env.SUPABASE_URL || "https://whkxkdxpndajqkkqmrcu.supabase.co";
 const key = process.env.SUPABASE_PUBLISHABLE_KEY || "";
-// Uses the publishable key only; privileged database access is intentionally not exposed here.
 
 export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get("id") ?? "";
@@ -13,15 +12,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "server configuration unavailable" }, { status: 500 });
   }
 
-  const endpoint = new URL("/rest/v1/rpc/get_sale_source_url_by_id", url);
+  const endpoint = new URL("/functions/v1/sale-source-url", url);
+  endpoint.searchParams.set("id", id);
   const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ p_id: id }),
+    method: "GET",
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
     cache: "no-store",
   });
 
@@ -29,8 +24,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "lookup failed" }, { status: 502 });
   }
 
-  const target = await response.json();
-  if (!target || !/^https?:\/\//i.test(String(target))) {
+  const payload = await response.json();
+  const target = payload?.url;
+  if (!payload?.ok || !/^https?:\/\//i.test(String(target ?? ""))) {
     return NextResponse.json({ ok: false, error: "target unavailable" }, { status: 404 });
   }
 
