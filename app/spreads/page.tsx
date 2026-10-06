@@ -6,7 +6,7 @@ const dt=(s:string)=>new Date(s).toLocaleString("ja-JP",{year:"numeric",month:"2
 
 async function getSpreads():Promise<{data:{CD:Row[];HA:Row[]};warnings:string[];error:string}>{
  try{
-  const r=await fetch("https://"+API_HOST+"/api/radar?all_spreads=1",{cache:"no-store"});
+  const r=await fetch("https://"+API_HOST+"/api/radar?limit=100",{cache:"no-store"});
   const x=await r.json();
   if(!r.ok||x.ok===false)throw new Error(x.error||"ランキングAPIエラー ("+r.status+")");
   return {data:{CD:Array.isArray(x.spread_rankings?.CD)?x.spread_rankings.CD:[],HA:Array.isArray(x.spread_rankings?.HA)?x.spread_rankings.HA:[]},warnings:(x.warnings??[]).filter((w:Warning)=>w.feature?.startsWith("spread_rankings")&&w.message).map((w:Warning)=>w.message),error:x.spread_rankings?"":"API応答に価格差ランキングが含まれていません。"};
