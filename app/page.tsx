@@ -1,5 +1,3 @@
-"use server";
-
 type C={rank:number;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;current_price_jpy:number;previous_price_jpy:number;change_jpy:number;change_percent:number;current_observed_at:string;previous_observed_at:string};
 type S={rank:number;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;cd_price_jpy:number;ha_price_jpy:number;difference_jpy:number;difference_percent:number;cd_observed_at:string;ha_observed_at:string};
 type Radar={ok:boolean;change_rankings:{CD:C[];HA:C[]};spread_rankings:{CD:S[];HA:S[]};warnings?:{feature?:string;message:string}[]};
@@ -15,12 +13,7 @@ async function getRadar():Promise<Radar|null>{
     if(!r.ok)return null;
     const x=await r.json() as Partial<Radar>;
     if(x.ok===false)return null;
-    return {
-      ok:true,
-      change_rankings:{CD:Array.isArray(x.change_rankings?.CD)?x.change_rankings.CD:[],HA:Array.isArray(x.change_rankings?.HA)?x.change_rankings.HA:[]},
-      spread_rankings:{CD:Array.isArray(x.spread_rankings?.CD)?x.spread_rankings.CD:[],HA:Array.isArray(x.spread_rankings?.HA)?x.spread_rankings.HA:[]},
-      warnings:Array.isArray(x.warnings)?x.warnings:[]
-    };
+    return {ok:true,change_rankings:{CD:Array.isArray(x.change_rankings?.CD)?x.change_rankings.CD:[],HA:Array.isArray(x.change_rankings?.HA)?x.change_rankings.HA:[]},spread_rankings:{CD:Array.isArray(x.spread_rankings?.CD)?x.spread_rankings.CD:[],HA:Array.isArray(x.spread_rankings?.HA)?x.spread_rankings.HA:[]},warnings:Array.isArray(x.warnings)?x.warnings:[]};
   }catch{return null}
 }
 
