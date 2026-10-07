@@ -1,9 +1,0 @@
-"use client";
-import {useState} from "react";
-type Row={product_id:string;canonical_name:string;source_name:string;observed_day:string;price_jpy:number};
-const yen=(n:number)=>"¥"+Math.round(n).toLocaleString("ja-JP");
-export default function History(){
- const[q,setQ]=useState(""),[days,setDays]=useState(90),[rows,setRows]=useState<Row[]>([]),[busy,setBusy]=useState(false);
- async function search(){if(!q.trim())return;setBusy(true);try{const r=await fetch(`/api/radar?q=${encodeURIComponent(q.trim())}&history=1&days=${days}`,{cache:"no-store"});const d=await r.json();setRows(d.history||[])}finally{setBusy(false)}}
- return <main style={{maxWidth:1050,margin:"0 auto",padding:50}}><a href="/" style={{color:"#73e8a2"}}>← Radar</a><h1>相場の推移</h1><p>カード名を検索して、保存された買取価格の推移を確認します。</p><div style={{display:"flex",gap:8,margin:"25px 0"}}><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&search()} placeholder="例：ピカチュウ" style={{flex:1,padding:13,background:"#10151c",border:"1px solid #29313c",color:"white"}}/><select value={days} onChange={e=>setDays(Number(e.target.value))} style={{background:"#10151c",color:"white",border:"1px solid #29313c"}}><option value={30}>30日</option><option value={90}>90日</option><option value={180}>180日</option><option value={365}>1年</option></select><button onClick={search} style={{padding:"0 22px",background:"#73e8a2",border:0,fontWeight:800}}>検索</button></div>{busy?<div className="empty">読み込み中…</div>:rows.length===0?<div className="empty">カード名を入力して検索してください。</div>:<div className="history-table">{rows.map((r,i)=><div key={`${r.product_id}-${r.source_name}-${r.observed_day}-${i}`}><span>{r.observed_day}</span><b>{r.canonical_name} · {r.source_name}</b><strong>{yen(r.price_jpy)}</strong></div>)}</div>}<footer>Cross-Border Seller Radar · historical market data</footer></main>
-}

@@ -1,3 +1,0 @@
-update public.game_registry set enabled=true,collection_enabled=true where code in ('one_piece','yugioh','mtg');
-update public.market_sources set enabled=true where id in ('11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','33333333-3333-4333-8333-333333333333');
-update public.sale_sources set enabled=true where id in ('41111111-1111-4111-8111-111111111111','42222222-2222-4222-8222-222222222222','43333333-3333-4333-8333-333333333333');
