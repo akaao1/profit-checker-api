@@ -42,7 +42,7 @@ async function buildFallbackSpreadRankings(aliasMap:Map<string,string>,maxRows:n
 Deno.serve(async(req)=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
  try{
-  const u=new URL(req.url),q=(u.searchParams.get("q")??"").trim(),requestedProductId=(u.searchParams.get("product_id")??"").trim(),cardName=(u.searchParams.get("card_name")??"").trim(),cardNumber=(u.searchParams.get("card_number")??"").trim();
+  const u=new URL(req.url),q=(u.searchParams.get("q")??"").trim(),game=(u.searchParams.get("game")??"pokemon").trim().toLowerCase(),requestedProductId=(u.searchParams.get("product_id")??"").trim(),cardName=(u.searchParams.get("card_name")??"").trim(),cardNumber=(u.searchParams.get("card_number")??"").trim();
   const limit=Math.min(Number(u.searchParams.get("limit")??30)||30,100),days=Math.min(730,Math.max(7,Number(u.searchParams.get("days")??90))),history=u.searchParams.get("history")==="1",allChanges=u.searchParams.get("all_changes")==="1",allSpreads=u.searchParams.get("all_spreads")==="1",onlyChanges=u.searchParams.get("only")==="changes";
   const aliasMap=new Map<string,string>();
   for(let offset=0;offset<10000;offset+=1000){
@@ -54,6 +54,7 @@ Deno.serve(async(req)=>{
   const aliasIds=new Set(aliasMap.keys());let productId=requestedProductId;if(productId&&aliasMap.has(productId))productId=aliasMap.get(productId)!;
   if(productId||cardName||cardNumber||q){
    let searchQuery=supabase.from("market_products").select("id,canonical_name,set_name,card_number,rarity,variant_key,variant_base_name");
+   searchQuery=searchQuery.eq("game",game);
    if(productId)searchQuery=searchQuery.eq("id",productId);
    else if(cardName&&cardNumber)searchQuery=searchQuery.ilike("canonical_name","%"+cardName+"%").ilike("card_number","%"+cardNumber+"%");
    else if(cardName)searchQuery=searchQuery.or("canonical_name.ilike.%"+cardName+"%,set_name.ilike.%"+cardName+"%");
@@ -99,25 +100,43 @@ Deno.serve(async(req)=>{
      historyRows=(h.data??[]).map((r:any)=>({product_id:r.product_id,canonical_name:meta?.canonical_name??null,set_name:meta?.set_name??null,card_number:meta?.card_number??null,rarity:meta?.rarity??null,variant_key:meta?.variant_key??"NORMAL",variant_base_name:meta?.variant_base_name??meta?.canonical_name??null,source_id:r.market_source_id,source_name:r.market_source_id===CD?"CD":"HA",observed_day:r.observed_at.slice(0,10),price_jpy:r.price_jpy,observed_at:r.observed_at}));
     }else{const h=await supabase.rpc("search_price_history",{p_query:cardNumber||cardName||q,p_days:days,p_limit:limit});if(h.error)throw h.error;historyRows=(h.data??[]).map((r:any)=>({...r,source_name:r.source_id===CD?"CD":r.source_id===HA?"HA":r.source_name}));}
    }
-   return new Response(JSON.stringify({ok:true,generated_at:new Date().toISOString(),sources:[],prices:displayPrices,search:displayRows,history:historyRows,history_days:days,change_rankings:{CD:[],HA:[]},spread_rankings:{CD:[],HA:[]},collection_stats_24h:[]}),{status:200,headers:cors});
+   return new Response(JSON.stringify({ok:true,game,generated_at:new Date().toISOString(),sources:[],prices:displayPrices,search:displayRows,history:historyRows,history_days:days,change_rankings:{CD:[],HA:[]},spread_rankings:{CD:[],HA:[]},collection_stats_24h:[]}),{status:200,headers:cors});
   }
   const warnings:any[]=[];
   const changeRankings=await supabase.rpc("get_price_change_rankings",{p_limit:allChanges?10000:Math.min(limit,50)});
   if(changeRankings.error)throw changeRankings.error;
-  if(onlyChanges)return new Response(JSON.stringify({ok:true,generated_at:new Date().toISOString(),sources:[],prices:[],search:[],history:[],history_days:days,change_rankings:changeRankings.data??{CD:[],HA:[]},spread_rankings:{CD:[],HA:[]},collection_stats_24h:[],warnings:[]}),{status:200,headers:cors});
+  const rankingProductIds=[...(changeRankings.data?.CD??[]),...(changeRankings.data?.HA??[])].map((r:any)=>r.product_id).filter(Boolean);
+  let allowedGameProducts=new Set<string>();
+  if(rankingProductIds.length){
+   for(let offset=0;offset<rankingProductIds.length;offset+=500){
+    const p=await supabase.from("market_products").select("id").eq("game",game).in("id",rankingProductIds.slice(offset,offset+500));
+    if(p.error)throw p.error; for(const row of p.data??[])allowedGameProducts.add(row.id);
+   }
+  }
+  const filteredChanges={CD:(changeRankings.data?.CD??[]).filter((r:any)=>allowedGameProducts.has(r.product_id)),HA:(changeRankings.data?.HA??[]).filter((r:any)=>allowedGameProducts.has(r.product_id))};
+  if(onlyChanges)return new Response(JSON.stringify({ok:true,game,generated_at:new Date().toISOString(),sources:[],prices:[],search:[],history:[],history_days:days,change_rankings:filteredChanges,spread_rankings:{CD:[],HA:[]},collection_stats_24h:[],warnings:[]}),{status:200,headers:cors});
   let spreadData:any={CD:[],HA:[]};
   const spreadRankings=await supabase.rpc("get_price_spread_rankings",{p_limit:allSpreads?10000:Math.min(limit,50)});
   if(spreadRankings.error)warnings.push({feature:"spread_rankings",message:spreadRankings.error.message,code:spreadRankings.error.code??null});
-  else spreadData=spreadRankings.data??{CD:[],HA:[]};
+  else {
+    const raw=spreadRankings.data??{CD:[],HA:[]};
+    const ids=[...(raw.CD??[]),...(raw.HA??[])].map((r:any)=>r.product_id).filter(Boolean);
+    const allowed=new Set<string>();
+    for(let offset=0;offset<ids.length;offset+=500){const p=await supabase.from("market_products").select("id").eq("game",game).in("id",ids.slice(offset,offset+500));if(p.error)throw p.error;for(const row of p.data??[])allowed.add(row.id)}
+    spreadData={CD:(raw.CD??[]).filter((r:any)=>allowed.has(r.product_id)),HA:(raw.HA??[]).filter((r:any)=>allowed.has(r.product_id))};
+  }
   if(!(spreadData.CD?.length||spreadData.HA?.length)){
    try{
     spreadData=await buildFallbackSpreadRankings(aliasMap,allSpreads?10000:Math.min(limit,50));
+    const ids=[...(spreadData.CD??[]),...(spreadData.HA??[])].map((r:any)=>r.product_id).filter(Boolean); const allowed=new Set<string>();
+    for(let offset=0;offset<ids.length;offset+=500){const p=await supabase.from("market_products").select("id").eq("game",game).in("id",ids.slice(offset,offset+500));if(p.error)throw p.error;for(const row of p.data??[])allowed.add(row.id)}
+    spreadData={CD:(spreadData.CD??[]).filter((r:any)=>allowed.has(r.product_id)),HA:(spreadData.HA??[]).filter((r:any)=>allowed.has(r.product_id))};
     if(spreadData.CD.length||spreadData.HA.length)warnings.push({feature:"spread_rankings",message:"HAの通常現行価格ビューが空のため、現行HAリストへの掲載を確認した24時間以内の最新観測を使用しています。1時間を超える価格には更新遅延フラグが付きます。"});
    }catch(fallbackError){
     const e:any=fallbackError;
     warnings.push({feature:"spread_rankings_fallback",message:e?.message??String(fallbackError),code:e?.code??null});
    }
   }
-  return new Response(JSON.stringify({ok:true,generated_at:new Date().toISOString(),sources:[],prices:[],search:[],history:[],history_days:days,change_rankings:changeRankings.data??{CD:[],HA:[]},spread_rankings:spreadData,collection_stats_24h:[],warnings}),{status:200,headers:cors});
+  return new Response(JSON.stringify({ok:true,generated_at:new Date().toISOString(),sources:[],prices:[],search:[],history:[],history_days:days,change_rankings:filteredChanges,spread_rankings:spreadData,collection_stats_24h:[],warnings}),{status:200,headers:cors});
  }catch(error){console.error("radar-api error",error);const e:any=error;return new Response(JSON.stringify({ok:false,error:e?.message??String(error),details:e?.code??null,hint:e?.hint??null}),{status:500,headers:cors});}
 });
