@@ -8,12 +8,12 @@ type RadarResponse={spread_rankings?:{CD:Row[];HA:Row[]};warnings?:Warning[];ok?
 const yen=(n:number)=>"¥"+Math.round(n).toLocaleString("ja-JP");
 const dt=(s:string)=>new Date(s).toLocaleString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
 
-const loadRadar=cache(async():Promise<RadarResponse>=>{
+const loadRadar=async():Promise<RadarResponse>=>{
   const r=await fetch("https://whkxkdxpndajqkkqmrcu.supabase.co/functions/v1/radar-api?limit=30",{cache:"no-store"});
   const x=await r.json().catch(()=>({error:"ランキングAPIの応答を解析できませんでした。"}));
   if(!r.ok||x.ok===false)throw new Error(x.error||"ランキングAPIエラー ("+r.status+")");
   return x;
-});
+};
 
 export default async function Spreads(){
   let data:{CD:Row[];HA:Row[]}={CD:[],HA:[]};
