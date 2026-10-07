@@ -1,3 +1,6 @@
+export const dynamic="force-dynamic";
+export const revalidate=0;
+
 type Row={rank:number;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;current_price_jpy:number;previous_price_jpy:number;change_jpy:number;change_percent:number;current_observed_at:string;previous_observed_at:string};
 const yen=(n:number)=>"¥"+Math.round(n).toLocaleString("ja-JP");
 const pct=(n:number)=>(n>=0?"+":"")+n.toFixed(1)+"%";
