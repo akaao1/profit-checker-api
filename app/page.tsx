@@ -1,3 +1,6 @@
+export const dynamic="force-dynamic";
+export const revalidate=0;
+
 type C={rank:number;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;current_price_jpy:number;previous_price_jpy:number;change_jpy:number;change_percent:number;current_observed_at:string;previous_observed_at:string};
 type S={rank:number;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;cd_price_jpy:number;ha_price_jpy:number;difference_jpy:number;difference_percent:number;cd_observed_at:string;ha_observed_at:string};
 type Radar={ok:boolean;change_rankings:{CD:C[];HA:C[]};spread_rankings:{CD:S[];HA:S[]};warnings?:{feature?:string;message:string}[]};
