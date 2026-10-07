@@ -19,7 +19,9 @@ const loadRadar=async(game:Game):Promise<RadarResponse>=>{
   return x;
 };
 
-export default async function Spreads({searchParams}:{searchParams:Promise<{game?:string}>}){\n  const params=await searchParams;\n  const game=validGame(params.game);
+export default async function Spreads({searchParams}:{searchParams:Promise<{game?:string}>}){
+  const params=await searchParams;
+  const game=validGame(params.game);
   let data:{CD:Row[];HA:Row[]}={CD:[],HA:[]};
   let warnings:string[]=[];
   let loadError="";
