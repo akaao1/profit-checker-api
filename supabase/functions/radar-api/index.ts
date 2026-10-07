@@ -104,17 +104,16 @@ Deno.serve(async(req)=>{
    return new Response(JSON.stringify({ok:true,game,generated_at:new Date().toISOString(),sources:[],prices:displayPrices,search:displayRows,history:historyRows,history_days:days,change_rankings:{CD:[],HA:[]},spread_rankings:{CD:[],HA:[]},collection_stats_24h:[]}),{status:200,headers:cors});
   }
   const warnings:any[]=[];
-  const changeRankings=await supabase.rpc("get_price_change_rankings",{p_limit:allChanges?10000:Math.min(limit,50)});
-  if(changeRankings.error)throw changeRankings.error;
-  const rankingProductIds=[...(changeRankings.data?.CD??[]),...(changeRankings.data?.HA??[])].map((r:any)=>r.product_id).filter(Boolean);
-  let allowedGameProducts=new Set<string>();
-  if(rankingProductIds.length){
-   for(let offset=0;offset<rankingProductIds.length;offset+=500){
-    const p=await supabase.from("market_products").select("id").eq("game",game).in("id",rankingProductIds.slice(offset,offset+500));
+  const cacheResult=await supabase.from("price_change_ranking_cache").select("channel,rank,product_id,canonical_name,set_name,card_number,rarity,current_price_jpy,previous_price_jpy,change_jpy,change_percent,current_observed_at,previous_observed_at,generated_at").in("channel",["CD","HA"]).order("generated_at",{ascending:false}).limit(10000);
+  if(cacheResult.error)throw cacheResult.error;
+  const cachedRows=cacheResult.data??[];
+  const cachedIds=[...new Set(cachedRows.map((r:any)=>r.product_id).filter(Boolean))];
+  const allowedGameProducts=new Set<string>();
+  for(let offset=0;offset<cachedIds.length;offset+=500){
+    const p=await supabase.from("market_products").select("id").eq("game",game).in("id",cachedIds.slice(offset,offset+500));
     if(p.error)throw p.error; for(const row of p.data??[])allowedGameProducts.add(row.id);
-   }
   }
-  const filteredChanges={CD:(changeRankings.data?.CD??[]).filter((r:any)=>allowedGameProducts.has(r.product_id)),HA:(changeRankings.data?.HA??[]).filter((r:any)=>allowedGameProducts.has(r.product_id))};
+  const filteredChanges={CD:cachedRows.filter((r:any)=>r.channel==="CD"&&allowedGameProducts.has(r.product_id)).sort((a:any,b:any)=>Math.abs(Number(b.change_percent))-Math.abs(Number(a.change_percent))||String(b.current_observed_at).localeCompare(String(a.current_observed_at))||a.product_id.localeCompare(b.product_id)).slice(0,allChanges?10000:Math.min(limit,50)).map((r:any,i:number)=>({...r,rank:i+1})),HA:cachedRows.filter((r:any)=>r.channel==="HA"&&allowedGameProducts.has(r.product_id)).sort((a:any,b:any)=>Math.abs(Number(b.change_percent))-Math.abs(Number(a.change_percent))||String(b.current_observed_at).localeCompare(String(a.current_observed_at))||a.product_id.localeCompare(b.product_id)).slice(0,allChanges?10000:Math.min(limit,50)).map((r:any,i:number)=>({...r,rank:i+1}))};
   if(onlyChanges)return new Response(JSON.stringify({ok:true,game,generated_at:new Date().toISOString(),sources:[],prices:[],search:[],history:[],history_days:days,change_rankings:filteredChanges,spread_rankings:{CD:[],HA:[]},collection_stats_24h:[],warnings:[]}),{status:200,headers:cors});
   let spreadData:any={CD:[],HA:[]};
   const spreadRankings=await supabase.rpc("get_price_spread_rankings",{p_limit:allSpreads?10000:Math.min(limit,50)});
