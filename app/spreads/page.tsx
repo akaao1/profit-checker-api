@@ -1,4 +1,5 @@
-import { cache } from "react";
+export const dynamic="force-dynamic";
+export const revalidate=0;
 
 type Row={rank:number;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;cd_price_jpy:number;ha_price_jpy:number;difference_jpy:number;difference_percent:number;cd_observed_at:string;ha_observed_at:string;cd_stale?:boolean;ha_stale?:boolean};
 type Warning={feature?:string;message:string};
