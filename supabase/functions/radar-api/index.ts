@@ -67,7 +67,17 @@ Deno.serve(async(req)=>{
    if(current.error)throw current.error;
    const crm=new Map((current.data??[]).filter((x:any)=>x.market_source_id===CD).map((x:any)=>[x.product_id,x]));
    const ham=new Map((current.data??[]).filter((x:any)=>x.market_source_id===HA).map((x:any)=>[x.product_id,x]));
-   const prices=rows.map((x:any)=>({product_id:x.id,canonical_name:x.canonical_name,set_name:x.set_name,card_number:x.card_number,rarity:x.rarity,variant_key:x.variant_key??"NORMAL",variant_base_name:x.variant_base_name??x.canonical_name,cd_latest_price_jpy:crm.get(x.id)?.price_jpy??null,cd_latest_observed_at:crm.get(x.id)?.observed_at??null,ha_latest_price_jpy:ham.get(x.id)?.price_jpy??null,ha_latest_observed_at:ham.get(x.id)?.observed_at??null}));
+   const haRows=await supabase.from("ha_current_stable_buy_prices").select("product_id,price_jpy,observed_at");
+   if(haRows.error)throw haRows.error;
+   const haIds=(haRows.data??[]).map((x:any)=>x.product_id);
+   const haMeta=new Map<string,any>();
+   for(let offset=0;offset<haIds.length;offset+=500){const batch=await supabase.from("market_products").select("id,game,canonical_name,set_name,card_number,rarity,variant_key,variant_base_name").eq("game",game).in("id",haIds.slice(offset,offset+500));if(batch.error)throw batch.error;for(const m of batch.data??[])haMeta.set(m.id,m);}
+   const haByIdentity=new Map<string,any>();
+   for(const hr of haRows.data??[]){const m=haMeta.get(hr.product_id);if(!m)continue;const key=m.card_number?[game,m.card_number,m.rarity??"",m.variant_key??"NORMAL"].map((v:any)=>String(v??"").normalize("NFKC").toLowerCase().trim()).join("|"):[game,m.canonical_name,m.set_name,m.rarity??""].map((v:any)=>String(v??"").normalize("NFKC").toLowerCase().trim()).join("|");const old=haByIdentity.get(key);if(!old||Date.parse(hr.observed_at)>Date.parse(old.observed_at))haByIdentity.set(key,{...hr,meta:m});}
+   const prices=rows.map((x:any)=>{
+     const direct=ham.get(x.id);const key=x.card_number?[game,x.card_number,x.rarity??"",x.variant_key??"NORMAL"].map((v:any)=>String(v??"").normalize("NFKC").toLowerCase().trim()).join("|"):[game,x.canonical_name,x.set_name,x.rarity??""].map((v:any)=>String(v??"").normalize("NFKC").toLowerCase().trim()).join("|");const matched=direct??haByIdentity.get(key);
+     return {product_id:x.id,canonical_name:x.canonical_name,set_name:x.set_name,card_number:x.card_number,rarity:x.rarity,variant_key:x.variant_key??"NORMAL",variant_base_name:x.variant_base_name??x.canonical_name,cd_latest_price_jpy:crm.get(x.id)?.price_jpy??null,cd_latest_observed_at:crm.get(x.id)?.observed_at??null,ha_latest_price_jpy:matched?.price_jpy??null,ha_latest_observed_at:matched?.observed_at??null};
+   });
    const displayRows:any[]=[];
    const displayPrices:any[]=[];
    const displayGroups=new Map<string,number[]>();
