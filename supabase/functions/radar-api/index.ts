@@ -67,11 +67,18 @@ Deno.serve(async(req)=>{
    if(current.error)throw current.error;
    const crm=new Map((current.data??[]).filter((x:any)=>x.market_source_id===CD).map((x:any)=>[x.product_id,x]));
    const ham=new Map((current.data??[]).filter((x:any)=>x.market_source_id===HA).map((x:any)=>[x.product_id,x]));
-   const haRows=await supabase.from("ha_current_stable_buy_prices").select("product_id,price_jpy,observed_at");
-   if(haRows.error)throw haRows.error;
-   const haIds=(haRows.data??[]).map((x:any)=>x.product_id);
    const haMeta=new Map<string,any>();
-   for(let offset=0;offset<haIds.length;offset+=500){const batch=await supabase.from("market_products").select("id,game,canonical_name,set_name,card_number,rarity,variant_key,variant_base_name").eq("game",game).in("id",haIds.slice(offset,offset+500));if(batch.error)throw batch.error;for(const m of batch.data??[])haMeta.set(m.id,m);}
+   const haCandidateQuery=supabase.from("market_products").select("id,game,canonical_name,set_name,card_number,rarity,variant_key,variant_base_name").eq("game",game);
+   let hc:any=haCandidateQuery;
+   if(productId) hc=hc.eq("id",productId);
+   else if(cardName&&cardNumber) hc=hc.ilike("canonical_name","%"+cardName+"%").ilike("card_number","%"+cardNumber+"%");
+   else if(cardName) hc=hc.or("canonical_name.ilike.%"+cardName+"%,set_name.ilike.%"+cardName+"%").limit(100);
+   else if(cardNumber) hc=hc.ilike("card_number","%"+cardNumber+"%").limit(100);
+   else hc=hc.or("canonical_name.ilike.%"+q+"%,card_number.ilike.%"+q+"%,set_name.ilike.%"+q+"%").limit(100);
+   const hcm=await hc;if(hcm.error)throw hcm.error;for(const m of hcm.data??[])haMeta.set(m.id,m);
+   const haIds=[...haMeta.keys()];
+   const haRows=haIds.length?await supabase.from("ha_current_stable_buy_prices").select("product_id,price_jpy,observed_at").in("product_id",haIds):{data:[],error:null};
+   if(haRows.error)throw haRows.error;
    const haByIdentity=new Map<string,any>();
    for(const hr of haRows.data??[]){const m=haMeta.get(hr.product_id);if(!m)continue;const key=m.card_number?[game,m.card_number,m.rarity??"",m.variant_key??"NORMAL"].map((v:any)=>String(v??"").normalize("NFKC").toLowerCase().trim()).join("|"):[game,m.canonical_name,m.set_name,m.rarity??""].map((v:any)=>String(v??"").normalize("NFKC").toLowerCase().trim()).join("|");const old=haByIdentity.get(key);if(!old||Date.parse(hr.observed_at)>Date.parse(old.observed_at))haByIdentity.set(key,{...hr,meta:m});}
    const prices=rows.map((x:any)=>{
