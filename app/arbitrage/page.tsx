@@ -4,7 +4,7 @@ export const revalidate=0;
 type Row={rank:number;game:string;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;variant_key:string|null;condition_label:string|null;stock_qty:number|null;ha_price_jpy:number;cd_price_jpy:number;gross_profit_jpy:number;gross_margin_pct:number|null;ha_observed_at:string;cd_observed_at:string;ha_source_url:string|null;ha_external_product_key:string};
 type Api={ok:boolean;game:string;opportunities?:Row[];error?:string};
 
-const API="https://whkxkdxpndajqkkqmrcu.whkxkdxpndajqkkqmrcu.supabase.co/functions/v1/radar-api";
+const API="https://whkxkdxpndajqkkqmrcu.supabase.co/functions/v1/radar-api";
 const yen=(n:number)=>"¥"+Math.round(n).toLocaleString("ja-JP");
 const dt=(s:string)=>new Date(s).toLocaleString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
 const GAMES=["pokemon","one_piece","yugioh","mtg"] as const;
