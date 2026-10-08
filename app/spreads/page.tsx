@@ -1,39 +1,54 @@
 export const dynamic="force-dynamic";
 export const revalidate=0;
 
-type Row={rank:number;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;cd_price_jpy:number;ha_price_jpy:number;difference_jpy:number;difference_percent:number;cd_observed_at:string;ha_observed_at:string;cd_stale?:boolean;ha_stale?:boolean};
-type Warning={feature?:string;message:string};
-type RadarResponse={spread_rankings?:{CD:Row[];HA:Row[]};warnings?:Warning[];ok?:boolean;error?:string};
+type Row={rank:number;game:string;product_id:string;canonical_name:string;set_name:string|null;card_number:string|null;rarity:string|null;variant_key:string|null;condition_label:string|null;stock_qty:number|null;ha_price_jpy:number;cd_price_jpy:number;gross_profit_jpy:number;gross_margin_pct:number|null;ha_observed_at:string;cd_observed_at:string;ha_source_url:string|null;ha_external_product_key:string};
+type Api={ok:boolean;game:string;opportunities?:Row[];error?:string};
 
+const API="https://whkxkdxpndajqkkqmrcu.supabase.co/functions/v1/radar-api";
 const yen=(n:number)=>"¥"+Math.round(n).toLocaleString("ja-JP");
 const dt=(s:string)=>new Date(s).toLocaleString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
-
 const GAMES=["pokemon","one_piece","yugioh","mtg"] as const;
 type Game=typeof GAMES[number];
 const gameName:Record<Game,string>={pokemon:"ポケモン",one_piece:"ONE PIECE",yugioh:"Yu-Gi-Oh!",mtg:"MTG"};
 const validGame=(v:string|undefined):Game=>GAMES.includes(v as Game)?v as Game:"pokemon";
-const loadRadar=async(game:Game):Promise<RadarResponse>=>{
-  const r=await fetch("https://whkxkdxpndajqkkqmrcu.supabase.co/functions/v1/radar-api?game="+encodeURIComponent(game)+"&limit=30",{cache:"no-store"});
-  const x=await r.json().catch(()=>({error:"ランキングAPIの応答を解析できませんでした。"}));
-  if(!r.ok||x.ok===false)throw new Error(x.error||"ランキングAPIエラー ("+r.status+")");
-  return x;
-};
 
-export default async function Spreads({searchParams}:{searchParams:Promise<{game?:string}>}){
-  const params=await searchParams;
-  const game=validGame(params.game);
-  let data:{CD:Row[];HA:Row[]}={CD:[],HA:[]};
-  let warnings:string[]=[];
-  let loadError="";
-  try{
-    const x=await loadRadar(game);
-    data=x.spread_rankings??{CD:[],HA:[]};
-    warnings=(x.warnings??[]).filter(w=>w.feature?.startsWith("spread_rankings")&&w.message).map(w=>w.message);
-    if(!x.spread_rankings)loadError="API応答に価格差ランキングが含まれていません。";
-  }catch(e){loadError=e instanceof Error?e.message:"ランキングの読み込みに失敗しました。";}
-  return <main><header><div className="brand"><span>⚡</span><div><b>Cross-Border Seller Radar</b><small>BUYBACK SPREAD INTELLIGENCE</small></div></div><nav style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}><a className="back" href="/">← 価格レーダーへ戻る</a><a className="back" href="/spreads">💰 買取価格差</a></nav></header>
-  <section className="change-page-head"><small>CD / HA PROFIT RADAR</small><h1>{gameName[game]} CD / HA 買取価格差</h1><p>同一product_idのCD買取価格とHA購入価格を現在状態で突合し、差額の大きい順に表示します。HAが高いものは「CDで買ってHAで売る」価格差候補、CDが高いものは逆方向の価格差候補です。同額・current stateに存在しないHA商品・履歴だけで復活した価格は対象外です。</p></section>
-  {warnings.map((message,i)=><div key={i} role="status" style={{margin:"12px 0 20px",padding:"12px 16px",border:"1px solid #b7791f",borderRadius:10,background:"rgba(183,121,31,.10)",fontSize:13,lineHeight:1.6}}>⚠️ {message}</div>)}
-  {loadError?<div role="alert" style={{margin:"12px 0 20px",padding:"12px 16px",border:"1px solid #b91c1c",borderRadius:10,background:"rgba(185,28,28,.10)",fontSize:13,lineHeight:1.6}}>⚠️ ランキングを読み込めませんでした：{loadError}</div>:(["HA","CD"] as const).map(ch=><section className="all-ranking" key={ch}><div className="all-ranking-head"><h2>{ch} のほうが高い</h2><span>{data[ch].length.toLocaleString()}件</span></div><div className="all-table"><div className="spread-all-row spread-all-head"><span>順位</span><span>カード</span><span>CD買取</span><span>HA買取</span><span>差額</span><span>差率</span><span>CD時点</span><span>HA時点</span></div>{data[ch].length===0?<div className="empty">該当する価格差データがありません。</div>:data[ch].map(r=><a className="spread-all-row" key={r.product_id} href={"/search?product_id="+encodeURIComponent(r.product_id)}><b>{r.rank}</b><span><strong>{r.canonical_name}</strong><small>{r.set_name??"—"} · <b className="rank-card-number">{r.card_number??"—"}</b> · {r.rarity??"—"}</small></span><span>{yen(r.cd_price_jpy)}</span><span>{yen(r.ha_price_jpy)}</span><span className="spread-diff">{r.difference_jpy>0?"+":"−"}{yen(Math.abs(r.difference_jpy))}</span><span>{r.difference_percent.toFixed(1)}%</span><span>{dt(r.cd_observed_at)}{r.cd_stale&&<small style={{display:"block",color:"#d97706",fontWeight:700}}>更新遅延</small>}</span><span>{dt(r.ha_observed_at)}{r.ha_stale&&<small style={{display:"block",color:"#d97706",fontWeight:700}}>更新遅延</small>}</span></a>)}</div></section>)}
-  <footer>Cross-Border Seller Radar · CD / HA separated comparison</footer></main>;
+async function load(game:Game):Promise<Api>{
+ const r=await fetch(API+"?opportunities=1&game="+encodeURIComponent(game)+"&limit=100",{cache:"no-store"});
+ const x=await r.json().catch(()=>({ok:false,error:"API応答を解析できませんでした。"}));
+ if(!r.ok||x.ok===false)throw new Error(x.error||"価格差データの取得に失敗しました。");
+ return x;
+}
+
+export default async function Arbitrage({searchParams}:{searchParams:Promise<{game?:string}>}){
+ const params=await searchParams,game=validGame(params.game);
+ let rows:Row[]=[];let error="";
+ try{const x=await load(game);rows=x.opportunities??[]}catch(e){error=e instanceof Error?e.message:"価格差データの取得に失敗しました。";}
+ return <main>
+  <header><div className="brand"><span>⚡</span><div><b>Cross-Border Seller Radar</b><small>HA BUY → CD SELL</small></div></div><nav style={{display:"flex",gap:12,flexWrap:"wrap"}}><a className="back" href="/">← 価格レーダー</a><a className="back" href="/search?game={game}">🔎 カード検索</a></nav></header>
+  <section className="change-page-head">
+   <small>ARBITRAGE OPPORTUNITIES</small>
+   <h1>{gameName[game]}：HAで買って、CDで売る</h1>
+   <p><b>HAの販売価格で仕入れ → CDの買取価格で売却</b>した場合に、CD買取価格 − HA販売価格 がプラスになるカードだけを表示します。つまり、このページが「実際に利益が残る可能性のあるカード」を探すためのページです。</p>
+   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:16}}>{GAMES.map(g=><a key={g} className="primary-link" href={"/arbitrage?game="+g} style={{opacity:g===game?1:.6}}>{gameName[g]}</a>)}</div>
+  </section>
+  {error&&<div role="alert" style={{margin:"12px 0 20px",padding:"12px 16px",border:"1px solid #b91c1c",borderRadius:10}}>⚠️ {error}</div>}
+  {!error&&<section className="all-ranking">
+   <div className="all-ranking-head"><div><h2>利益額の大きい順</h2><small>HA仕入れ価格 → CD買取価格</small></div><span>{rows.length.toLocaleString()}件</span></div>
+   <div className="all-table">
+    <div className="spread-all-row spread-all-head"><span>順位</span><span>カード</span><span>HAで買う</span><span>CDで売る</span><span>粗利益</span><span>利益率</span><span>状態</span><span>在庫</span></div>
+    {rows.length===0?<div className="empty">{game==="pokemon"?"現在、条件を満たすHA→CDの利益候補はありません。":"現在、このゲームにはHAの販売価格を使った仕入れデータがありません。"}</div>:rows.map(r=><a className="spread-all-row" key={r.product_id+"-"+r.ha_external_product_key} href={"/search?game="+game+"&product_id="+encodeURIComponent(r.product_id)}>
+      <b>{r.rank}</b>
+      <span><strong>{r.canonical_name}</strong><small>{r.set_name??"—"} · <b className="rank-card-number">{r.card_number??"—"}</b> · {r.rarity??"—"}</small></span>
+      <span><b>{yen(r.ha_price_jpy)}</b><small>{dt(r.ha_observed_at)}</small></span>
+      <span><b>{yen(r.cd_price_jpy)}</b><small>{dt(r.cd_observed_at)}</small></span>
+      <span className="spread-diff profit"><b>+{yen(r.gross_profit_jpy)}</b></span>
+      <span className="profit"><b>{r.gross_margin_pct==null?"—":r.gross_margin_pct.toFixed(1)+"%"}</b></span>
+      <span>{r.condition_label??"—"}</span>
+      <span>{r.stock_qty==null?"在庫確認済":r.stock_qty+"枚"}</span>
+    </a>)}
+   </div>
+  </section>}
+  <section className="ranking-section" style={{marginTop:24}}><div className="head"><div><small>MEANING</small><h2>このページの見方</h2></div></div><div className="ranking-card" style={{padding:20}}><p style={{lineHeight:1.8,margin:0}}>例：HAが¥100,000、CDが¥190,000なら、単純差額は <b>¥90,000</b> です。このページではこの方向だけを対象にし、逆方向の「CDで買ってHAで売る」は別の価格差ランキングとして扱います。送料・手数料・税金などは含まない粗利益です。</p></div></section>
+  <footer>Cross-Border Seller Radar · HA BUY → CD SELL</footer>
+ </main>;
 }
