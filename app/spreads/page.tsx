@@ -28,7 +28,7 @@ export default async function Arbitrage({searchParams}:{searchParams:Promise<{ga
   <section className="change-page-head">
    <small>ARBITRAGE OPPORTUNITIES</small>
    <h1>{gameName[game]}：HAで買って、CDで売る</h1>
-   <p><b>HAの販売価格で仕入れ → CDの買取価格で売却</b>した場合に、CD買取価格 − HA販売価格 がプラスになるカードだけを表示します。つまり、このページが「実際に利益が残る可能性のあるカード」を探すためのページです。</p>
+   <p><b>HAの販売価格で仕入れ → CDの買取価格で売却</b>した場合に、CD買取価格 − HA販売価格 がプラスで、かつ両方の価格取得時刻が24時間以内かつ相互に24時間以内のカードだけを表示します。古い価格は利益候補として表示しません。</p>
    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:16}}>{GAMES.map(g=><a key={g} className="primary-link" href={"/arbitrage?game="+g} style={{opacity:g===game?1:.6}}>{gameName[g]}</a>)}</div>
   </section>
   {error&&<div role="alert" style={{margin:"12px 0 20px",padding:"12px 16px",border:"1px solid #b91c1c",borderRadius:10}}>⚠️ {error}</div>}
@@ -36,7 +36,7 @@ export default async function Arbitrage({searchParams}:{searchParams:Promise<{ga
    <div className="all-ranking-head"><div><h2>利益額の大きい順</h2><small>HA仕入れ価格 → CD買取価格</small></div><span>{rows.length.toLocaleString()}件</span></div>
    <div className="all-table">
     <div className="spread-all-row spread-all-head"><span>順位</span><span>カード</span><span>HAで買う</span><span>CDで売る</span><span>粗利益</span><span>利益率</span><span>状態</span><span>在庫</span></div>
-    {rows.length===0?<div className="empty">{game==="pokemon"?"現在、条件を満たすHA→CDの利益候補はありません。":"現在、このゲームにはHAの販売価格を使った仕入れデータがありません。"}</div>:rows.map(r=><a className="spread-all-row" key={r.product_id+"-"+r.ha_external_product_key} href={"/search?game="+game+"&product_id="+encodeURIComponent(r.product_id)}>
+    {rows.length===0?<div className="empty">{game==="pokemon"?"現在、条件を満たす利益候補はありません。CD価格の更新待ち、価格差なし、または取得時刻が24時間条件外の可能性があります。":"現在、このゲームのHA販売価格データが未接続です。HAの買取価格データは販売価格の代用にせず、実際のHA販売価格を収集できるまで利益候補を表示しません。"}</div>:rows.map(r=><a className="spread-all-row" key={r.product_id+"-"+r.ha_external_product_key} href={"/search?game="+game+"&product_id="+encodeURIComponent(r.product_id)}>
       <b>{r.rank}</b>
       <span><strong>{r.canonical_name}</strong><small>{r.set_name??"—"} · <b className="rank-card-number">{r.card_number??"—"}</b> · {r.rarity??"—"}</small></span>
       <span><b>{yen(r.ha_price_jpy)}</b><small>{dt(r.ha_observed_at)}</small></span>
