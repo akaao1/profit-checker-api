@@ -44,20 +44,22 @@ Deno.serve(async(req)=>{
  try{
   const u=new URL(req.url),q=(u.searchParams.get("q")??"").trim(),game=(u.searchParams.get("game")??"pokemon").trim().toLowerCase(),requestedProductId=(u.searchParams.get("product_id")??"").trim(),cardName=(u.searchParams.get("card_name")??"").trim(),cardNumber=(u.searchParams.get("card_number")??"").trim();
   const limit=Math.min(Number(u.searchParams.get("limit")??30)||30,100),opportunitiesOnly=u.searchParams.get("opportunities")==="1",days=Math.min(730,Math.max(7,Number(u.searchParams.get("days")??90))),gameRow=await supabase.from("game_registry").select("code,enabled,collection_enabled").eq("code",game).maybeSingle(),history=u.searchParams.get("history")==="1",allChanges=u.searchParams.get("all_changes")==="1",allSpreads=u.searchParams.get("all_spreads")==="1",onlyChanges=u.searchParams.get("only")==="changes";
-  const aliasMap=new Map<string,string>();
-  for(let offset=0;offset<10000;offset+=1000){
-   const aliasPage=await supabase.from("cd_ha_set_name_alias_map").select("alias_product_id,canonical_product_id").range(offset,offset+999);
-   if(aliasPage.error)throw aliasPage.error;
-   for(const row of aliasPage.data??[])aliasMap.set(row.alias_product_id,row.canonical_product_id);
-   if((aliasPage.data??[]).length<1000)break;
-  }
-  const aliasIds=new Set(aliasMap.keys());let productId=requestedProductId;if(productId&&aliasMap.has(productId))productId=aliasMap.get(productId)!;
   if(!gameRow.data||!gameRow.data.enabled||!gameRow.data.collection_enabled)return new Response(JSON.stringify({ok:false,error:"game_disabled",game}),{status:404,headers:cors});
   if(opportunitiesOnly){
    const opportunities=await supabase.rpc("get_ha_to_cd_opportunities",{p_limit:Math.min(limit,200),p_game:game});
    if(opportunities.error)throw opportunities.error;
    return new Response(JSON.stringify({ok:true,game,generated_at:new Date().toISOString(),opportunities:opportunities.data??[],warnings:[]}),{status:200,headers:cors});
   }
+  const aliasMap=new Map<string,string>();
+  if(!onlyChanges){
+   for(let offset=0;offset<10000;offset+=1000){
+    const aliasPage=await supabase.from("cd_ha_set_name_alias_map").select("alias_product_id,canonical_product_id").range(offset,offset+999);
+    if(aliasPage.error)throw aliasPage.error;
+    for(const row of aliasPage.data??[])aliasMap.set(row.alias_product_id,row.canonical_product_id);
+    if((aliasPage.data??[]).length<1000)break;
+   }
+  }
+  const aliasIds=new Set(aliasMap.keys());let productId=requestedProductId;if(productId&&aliasMap.has(productId))productId=aliasMap.get(productId)!;
   if(productId||cardName||cardNumber||q){
    let searchQuery=supabase.from("market_products").select("id,canonical_name,set_name,card_number,rarity,variant_key,variant_base_name");
    searchQuery=searchQuery.eq("game",game);
