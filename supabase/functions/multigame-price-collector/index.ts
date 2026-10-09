@@ -50,7 +50,7 @@ Deno.serve(async(req)=>{
  const sourceId=String(body.source_id||"");
  const source=SOURCES[sourceId]; if(!source)return Response.json({error:"unsupported source_id"},{status:400});
 
- const claim=await sb.from("multigame_price_collection_state").update({locked_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("source_id",sourceId).or("locked_at.is.null,locked_at.lt."+new Date(Date.now()-15*60*1000).toISOString()).select("source_id").maybeSingle();
+ const claim=await sb.from("multigame_price_collection_state").update({locked_at:new Date().toISOString()}).eq("source_id",sourceId).or("locked_at.is.null,locked_at.lt."+new Date(Date.now()-15*60*1000).toISOString()).select("source_id").maybeSingle();
  if(claim.error)return Response.json({error:claim.error.message},{status:500});
  if(!claim.data)return Response.json({ok:true,status:"busy",source_id:sourceId},{status:202});
  const {data:state,error:stateErr}=await sb.from("multigame_price_collection_state").select("*").eq("source_id",sourceId).single();
