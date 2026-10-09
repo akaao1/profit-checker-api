@@ -663,10 +663,16 @@ Deno.serve(async (req) => {
         p_kind: "damaged", p_min_minutes: 25, p_max_minutes: 55,
       });
       if (damagedClaim.error) throw damagedClaim.error;
+      let damagedScanError: string | null = null;
       if (damagedClaim.data) {
-        await run({ page_start: 1, page_count: 1, collection: "damaged-discount" });
+        try {
+          await run({ page_start: 1, page_count: 1, collection: "damaged-discount" });
+        } catch (e) {
+          // A rate-limited optional damaged-listing scan must not fail the normal listing cycle.
+          damagedScanError = errText(e);
+        }
       }
-      return new Response(JSON.stringify({ ...result, damaged_scan: !!damagedClaim.data }), { headers: cors });
+      return new Response(JSON.stringify({ ...result, damaged_scan: !!damagedClaim.data, damaged_scan_error: damagedScanError }), { headers: cors });
     }
 
     if (b.action === "run") return new Response(JSON.stringify(await run(b)), { headers: cors });
