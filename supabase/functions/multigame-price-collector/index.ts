@@ -58,6 +58,10 @@ Deno.serve(async(req)=>{
 
  let cycleId=state.current_cycle_id;
  let page=state.next_page||1;
+ // Abandon an incomplete cycle after 24 hours so stale partial-cycle rows cannot
+ // block fresh observations or be mistaken for a current completed snapshot.
+ const staleCycle=Boolean(cycleId && state.last_success_at && Date.now()-new Date(state.last_success_at).getTime()>24*60*60*1000);
+ if(staleCycle){cycleId=crypto.randomUUID();page=1;const reset=await sb.from("multigame_price_collection_state").update({next_page:1,current_cycle_id:cycleId,updated_at:new Date().toISOString()}).eq("source_id",sourceId);if(reset.error)throw new Error(reset.error.message);}
  if(!cycleId){cycleId=crypto.randomUUID(); await sb.from("multigame_price_collection_state").update({current_cycle_id:cycleId,updated_at:new Date().toISOString()}).eq("source_id",sourceId);}
  const run=await sb.from("price_fetch_runs").insert({market_source_id:sourceId,status:"RUNNING"}).select("id").single();
  if(run.error)return Response.json({error:run.error.message},{status:500});
@@ -84,9 +88,16 @@ Deno.serve(async(req)=>{
    const obs=rows.map(r=>({
      market_source_id:sourceId,product_id:ids.get(r.key),fetch_run_id:run.data.id,observed_at:now,
      price_jpy:r.price,source_url:url,source_product_key:r.key,
-     raw_payload:{game:source.game,parser_version:1,cycle_id:cycleId,page,source_url:url}
+     raw_payload:{game:source.game,parser_version:2,cycle_id:cycleId,page,source_url:url}
    })).filter((x:any)=>x.product_id);
-   for(let j=0;j<obs.length;j+=500){const ins=await sb.from("price_observations").insert(obs.slice(j,j+500));if(ins.error)throw new Error(ins.error.message);saved+=Math.min(500,obs.length-j);}
+   // A source page can contain aliases/variants that normalize to the same product.
+   // The DB intentionally permits only one observation per product per collection cycle.
+   const pageUnique=[...new Map(obs.map((x:any)=>[x.product_id,x])).values()];
+   const existing=await sb.from("price_observations").select("product_id").eq("market_source_id",sourceId).filter("raw_payload->>cycle_id","eq",cycleId);
+   if(existing.error)throw new Error("cycle dedupe lookup: "+existing.error.message);
+   const seen=new Set((existing.data||[]).map((x:any)=>x.product_id));
+   const fresh=pageUnique.filter((x:any)=>!seen.has(x.product_id));
+   for(let j=0;j<fresh.length;j+=500){const batch=fresh.slice(j,j+500);const ins=await sb.from("price_observations").insert(batch);if(ins.error)throw new Error(ins.error.message);saved+=batch.length;batch.forEach((x:any)=>seen.add(x.product_id));}
    page++;
    if(page>source.maxPages){finished=true;break;}
   }
