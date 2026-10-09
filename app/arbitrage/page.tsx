@@ -7,9 +7,9 @@ type Api={ok:boolean;game:string;opportunities?:Row[];error?:string};
 const API="https://whkxkdxpndajqkkqmrcu.supabase.co/functions/v1/radar-api";
 const yen=(n:number)=>"¥"+Math.round(n).toLocaleString("ja-JP");
 const dt=(s:string)=>new Date(s).toLocaleString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
-const GAMES=["pokemon","one_piece","yugioh","mtg"] as const;
+const GAMES=["pokemon"] as const;
 type Game=typeof GAMES[number];
-const gameName:Record<Game,string>={pokemon:"ポケモン",one_piece:"ONE PIECE",yugioh:"Yu-Gi-Oh!",mtg:"MTG"};
+const gameName:Record<Game,string>={pokemon:"ポケモン"};
 const validGame=(v:string|undefined):Game=>GAMES.includes(v as Game)?v as Game:"pokemon";
 
 async function load(game:Game):Promise<Api>{
