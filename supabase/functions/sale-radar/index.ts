@@ -618,7 +618,7 @@ Deno.serve(async (req) => {
       }
 
       const claim = await supabase.rpc("claim_sale_collection_slot", {
-        p_kind: "normal", p_min_minutes: 8, p_max_minutes: 22,
+        p_kind: "normal", p_min_minutes: 1, p_max_minutes: 4,
       });
       if (claim.error) throw claim.error;
       if (!claim.data) {
