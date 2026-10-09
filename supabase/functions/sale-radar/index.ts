@@ -69,7 +69,7 @@ async function proxySecret() {
 }
 
 async function sourceConfig() {
-  const q = await supabase.from("sale_sources").select("id,code,base_url").eq("code", "HA_SELL").single();
+  const q = await supabase.from("sale_sources").select("id,code,base_url").eq("id", "75d222f1-4e7c-48b2-95ff-8de0f885ebd7").single();
   if (q.error) throw q.error;
   if (!q.data?.base_url) throw new Error("sale source config missing");
   return q.data;
