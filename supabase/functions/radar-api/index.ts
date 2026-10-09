@@ -5,8 +5,8 @@ const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"co
 const CD="6147f366-d44f-40ce-a364-fdcdcb9dbf29",HA="7d8d8aaf-a197-4615-bf43-ecae1f62e0c2";
 async function buildFallbackSpreadRankings(aliasMap:Map<string,string>,maxRows:number){
  const [cdResult,haResult]=await Promise.all([
-  supabase.from("cd_current_stable_prices").select("product_id,price_jpy,observed_at").gt("price_jpy",0).order("observed_at",{ascending:false}).limit(10000),
-  supabase.from("ha_current_stable_buy_prices").select("product_id,price_jpy,observed_at").gt("price_jpy",0).order("observed_at",{ascending:false}).limit(10000)
+  supabase.from("cd_current_stable_prices").select("product_id,price_jpy,observed_at").gt("price_jpy",0).gte("observed_at",new Date(Date.now()-24*60*60*1000).toISOString()).order("observed_at",{ascending:false}).limit(10000),
+  supabase.from("ha_current_stable_buy_prices").select("product_id,price_jpy,observed_at").gt("price_jpy",0).gte("observed_at",new Date(Date.now()-24*60*60*1000).toISOString()).order("observed_at",{ascending:false}).limit(10000)
  ]);
  if(cdResult.error)throw cdResult.error;
  if(haResult.error)throw haResult.error;
