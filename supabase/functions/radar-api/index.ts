@@ -52,7 +52,7 @@ Deno.serve(async(req)=>{
    if((aliasPage.data??[]).length<1000)break;
   }
   const aliasIds=new Set(aliasMap.keys());let productId=requestedProductId;if(productId&&aliasMap.has(productId))productId=aliasMap.get(productId)!;
-  if(!gameRow.data)return new Response(JSON.stringify({ok:false,error:"unsupported_game",game}),{status:400,headers:cors});
+  if(!gameRow.data||!gameRow.data.enabled||!gameRow.data.collection_enabled)return new Response(JSON.stringify({ok:false,error:"game_disabled",game}),{status:404,headers:cors});
   if(opportunitiesOnly){
    const opportunities=await supabase.rpc("get_ha_to_cd_opportunities",{p_limit:Math.min(limit,200),p_game:game});
    if(opportunities.error)throw opportunities.error;
