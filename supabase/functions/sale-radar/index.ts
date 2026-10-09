@@ -69,7 +69,8 @@ async function proxySecret() {
 }
 
 async function sourceConfig() {
-  const q = await supabase.from("sale_sources").select("id,code,base_url").eq("code", "HA_SELL").single();
+  // The production source code is "ha_current"; do not query the obsolete HA_SELL alias.
+  const q = await supabase.from("sale_sources").select("id,code,base_url").eq("id", "75d222f1-4e7c-48b2-95ff-8de0f885ebd7").single();
   if (q.error) throw q.error;
   if (!q.data?.base_url) throw new Error("sale source config missing");
   return q.data;
@@ -601,6 +602,21 @@ Deno.serve(async (req) => {
           error_message:"stale RUNNING run recovered by scheduler"
         }).eq("id",runningQ.data.id).eq("status","RUNNING");
       }
+      // Recover an abandoned multi-page cycle after a day without a successful run.
+      // Preserve the published listing snapshot until a new cycle is finalized.
+      const preState = await supabase.from("sale_collection_state")
+        .select("last_success_at,cycle_started_at").eq("id", true).single();
+      if (preState.error) throw preState.error;
+      const lastSuccessMs = preState.data.last_success_at ? Date.parse(preState.data.last_success_at) : 0;
+      if (!lastSuccessMs || Date.now() - lastSuccessMs > 24 * 60 * 60 * 1000) {
+        const resetAt = new Date().toISOString();
+        const reset = await supabase.from("sale_collection_state").update({
+          next_page: 1, current_cycle_id: crypto.randomUUID(), cycle_started_at: resetAt,
+          next_due_at: resetAt,
+        }).eq("id", true);
+        if (reset.error) throw reset.error;
+      }
+
       const claim = await supabase.rpc("claim_sale_collection_slot", {
         p_kind: "normal", p_min_minutes: 8, p_max_minutes: 22,
       });
