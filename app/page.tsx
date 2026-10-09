@@ -22,7 +22,7 @@ async function getRadar():Promise<Radar|null>{
 
 function ChangeCard({channel,rows}:{channel:"CD"|"HA";rows:C[]}){
   return <div className="ranking-card"><div className="ranking-card-head"><b>{channel}</b><span>変動率の大きい順</span></div>
-    {rows.length===0?<div className="ranking-empty">該当する前日比データがありません。</div>:rows.slice(0,50).map((r,i)=>
+    {rows.length===0?<div className="ranking-empty">前日分の新鮮な価格基準を蓄積中です。前日データが揃い次第、前日比ランキングを表示します。</div>:rows.slice(0,50).map((r,i)=>
       <a className="ranking-row" key={r.product_id} href={"/search?product_id="+encodeURIComponent(r.product_id)}>
         <span className="rank-no">{i+1}</span><span className="rank-name"><strong>{r.canonical_name}</strong><small>{r.set_name??"—"} · <b className="rank-card-number">{r.card_number??"—"}</b></small></span>
         <span className="rank-prices"><span className="rank-price-line"><b>{yen(r.previous_price_jpy)}</b><span>→</span><b>{yen(r.current_price_jpy)}</b></span><span className="rank-change"><b className={r.change_jpy>=0?"profit":"loss"}>{r.change_jpy>=0?"+":""}{yen(Math.abs(r.change_jpy))}</b><b className={r.change_percent>=0?"profit":"loss"}>{pct(r.change_percent)}</b></span><em>{dt(r.previous_observed_at)} → {dt(r.current_observed_at)}</em></span>
