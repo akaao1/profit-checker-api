@@ -532,10 +532,14 @@ async function run(b: any) {
     }
 
     stage = "insert_observations";
-    for (let i = 0; i < rows.length; i += 100) {
-      const ins = await supabase.from("sale_observations").insert(rows.slice(i, i + 100));
+    // Smaller batches reduce per-statement work and transaction duration while
+    // preserving all existing database identity/normalization triggers.
+    const observationBatchSize = 20;
+    for (let i = 0; i < rows.length; i += observationBatchSize) {
+      const batch = rows.slice(i, i + observationBatchSize);
+      const ins = await supabase.from("sale_observations").insert(batch);
       if (ins.error) throw new Error("sale observation write: " + errText(ins.error));
-      written += Math.min(100, rows.length - i);
+      written += batch.length;
     }
 
     const stagingCycleId = String(b.cycle_id ?? "");
